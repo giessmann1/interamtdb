@@ -1,0 +1,15 @@
+version: '3.6'
+services:   
+  db:
+      environment:
+         MYSQL_ROOT_PASSWORD: root
+      command:
+         - --table_definition_cache=100
+         - --performance_schema=0
+         - --default-authentication-plugin=mysql_native_password
+         - --innodb_use_native_aio=0
+      volumes:
+          - ./init:/docker-entrypoint-initdb.d
+          - ./dbdata:/var/lib/mysql
+      container_name: mysqldb
+      image: mysql
