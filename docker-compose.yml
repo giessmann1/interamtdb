@@ -1,15 +1,23 @@
-version: '3.6'
-services:   
-  db:
+version: "3.6"
+services:
+   db:
+      image: mongo:latest
+      container_name: interamtdb-mongo
+      restart: always
+      ports:
+         - 27017:27017
       environment:
-         MYSQL_ROOT_PASSWORD: root
-      command:
-         - --table_definition_cache=100
-         - --performance_schema=0
-         - --default-authentication-plugin=mysql_native_password
-         - --innodb_use_native_aio=0
+         - MONGO_INITDB_ROOT_USERNAME_FILE=/run/secrets/mongodb-user
+         - MONGO_INITDB_ROOT_PASSWORD_FILE=/run/secrets/mongodb-pass
+      secrets:
+         - mongodb-user
+         - mongodb-pass
       volumes:
-          - ./init:/docker-entrypoint-initdb.d
-          - ./dbdata:/var/lib/mysql
-      container_name: mysqldb
-      image: mysql
+         - ./interamtdb-data:/data/db
+volumes:
+  interamtdb-data:
+secrets:
+   mongodb-user:
+      file: ./.secrets/mongodb_user.txt
+   mongodb-pass:
+      file: ./.secrets/mongodb_pwd.txt
