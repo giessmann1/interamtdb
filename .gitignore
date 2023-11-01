@@ -162,6 +162,5 @@ cython_debug/
 
 # Custom
 .secrets/
-# startdb.sh
-# stopdb.sh
 interamtdb-data/
+geckodriver.log

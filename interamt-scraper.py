@@ -1,5 +1,8 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.firefox.service import Service
+from subprocess import getoutput
 from bs4 import BeautifulSoup
 import time
 import pandas as pd
@@ -9,7 +12,14 @@ import json
 import requests
 
 def get_new_job_ads(conn):
-    driver = webdriver.Safari()
+    # Optimization to run on a headless server-side firefox, adjust if other setups are used.
+    # Be aware of incompatibilites between selenium and geckodriver, see requirements.txt
+    opts = Options()
+    opts.binary_location = getoutput("find /snap/firefox -name firefox").split("\n")[-1]
+    opts.add_argument("--headless")
+    service = Service(executable_path="/usr/local/bin/geckodriver")
+
+    driver = webdriver.Firefox(options=opts, service=service)
     url = "https://interamt.de/koop/app/trefferliste"
     driver.get(url)
     
@@ -44,7 +54,7 @@ def get_new_job_ads(conn):
     This approach is a bit slow on intial run, but more efficient for contious use (breaks when all new ads are collected).
     Default sorting of website by adding date and id
     '''
-    for i in range(2):
+    for i in range(2): #equals max 20 ads for testing
         soup = BeautifulSoup(driver.page_source, "html.parser")
         table_body = soup.find("table").find("tbody")
         trs_last_tens = None
@@ -72,7 +82,7 @@ def get_new_job_ads(conn):
     driver.quit()
 
     '''
-    We kept the df instead of a list for a better future proof. IDs are not unique.
+    We kept the df instead of a list for a better future proof. IDs might not be unique.
     '''
     return list_of_dicts
 
@@ -107,14 +117,16 @@ def mongo_authenticate():
     port = 27017
 
     f_open = open(".secrets/mongodb_user.txt",'r')
-    user_name = f_open.readlines()[0]
+    username = f_open.readlines()[0]
     f_open.close()
+    username = urllib.parse.quote_plus(username)
 
     f_open = open(".secrets/mongodb_pwd.txt",'r')
-    pass_word = f_open.readlines()[0]
+    password = f_open.readlines()[0]
     f_open.close()
+    password = urllib.parse.quote_plus(password)
 
-    client = pymongo.MongoClient(f'mongodb://{user_name}:{urllib.parse.quote_plus(pass_word)}@{host}:{port}') 
+    client = pymongo.MongoClient('mongodb://%s:%s@localhost' % (username, password), authSource="admin")
     mydb = client["interamtdb"]
     mycol = mydb["jobads"]
 
@@ -147,17 +159,18 @@ def scrape_job_ad(id):
 if __name__ == "__main__":
     conn = mongo_authenticate()
     list_of_new_job_ads = get_new_job_ads(conn)
-    print("New job ads: " + str(len(list_of_new_job_ads)))
+    print(list_of_new_job_ads)
+    #print("New job ads: " + str(len(list_of_new_job_ads)))
 
-    extended_list_of_new_job_ads = list()
-    for i in range(len(list_of_new_job_ads)):
-        id = list_of_new_job_ads[i]["ID"]
-        extended_job_ad = {**list_of_new_job_ads[i], **scrape_job_ad(id)} # Overwriting is ok
-        extended_list_of_new_job_ads.append(extended_job_ad)
-        print("Job ad " + str(i + 1) + " of " + str(len(list_of_new_job_ads)) + " scraped.")
-        time.sleep(2)
+    #extended_list_of_new_job_ads = list()
+    #for i in range(len(list_of_new_job_ads)):
+     #   id = list_of_new_job_ads[i]["ID"]
+     #   extended_job_ad = {**list_of_new_job_ads[i], **scrape_job_ad(id)} # Overwriting is ok
+     #   extended_list_of_new_job_ads.append(extended_job_ad)
+     #   print("Job ad " + str(i + 1) + " of " + str(len(list_of_new_job_ads)) + " scraped.")
+     #   time.sleep(2)
 
     # TODO: leaning duplicate attributes
     
     # Save to file or db
-    conn.insert_many(extended_list_of_new_job_ads)
+    #conn.insert_many(extended_list_of_new_job_ads)
