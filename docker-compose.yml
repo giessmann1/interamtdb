@@ -13,7 +13,7 @@ services:
          - mongodb-user
          - mongodb-pass
       volumes:
-         - ./mongo/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+         - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
          - ./interamtdb-data:/data/db
 volumes:
   interamtdb-data:

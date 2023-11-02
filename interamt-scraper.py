@@ -32,7 +32,7 @@ def get_new_job_ads(conn):
     table = soup.find("table") # find table
     # get number of current job ads
     job_ads_max = int(table.find("caption").find_all("span")[1].text.replace(" Angebote gefunden", ""))
-    print("Total job ads available: " + str(job_ads_max))
+    # print("Total job ads available: " + str(job_ads_max))
     ADS_PER_LOOP = 10 # constant determined by website
     loops = int(job_ads_max / ADS_PER_LOOP) # plus one since remainder requires a loop, minus one since 10 ads are initially there
     last_loop_entries = job_ads_max % ADS_PER_LOOP
@@ -73,7 +73,7 @@ def get_new_job_ads(conn):
                     break
             list_of_dicts.append(tr_as_dict)
 
-        print("Loop " + str(i + 1) + " of " + str(loops) + "_max done.")
+        # print("Loop " + str(i + 1) + " of " + str(loops) + "_max done.")
         if finished: break
         if (i != 1):
             driver.find_element(By.ID, button_id).click()
@@ -109,7 +109,7 @@ def get_li_as_list(li):
     if (term is None):
         return None
     term = term.text.strip()
-    value = li.find("span", class_ = "ia-m-desc-list__list-desc").text.strip()
+    value = li.find("span", class_ = "ia-m-desc-list__list-desc").text.strip().replace("\n", " ")
     return [term, value]
 
 def mongo_authenticate():
@@ -132,15 +132,33 @@ def mongo_authenticate():
 
     return mycol
 
+def remove_inline_elements(html_text):
+    NON_BREAKING_ELEMENTS = ['a', 'abbr', 'acronym', 'audio', 'b', 'bdi', 'bdo', 'big', 'button', 
+    'canvas', 'cite', 'code', 'data', 'datalist', 'del', 'dfn', 'em', 'embed', 'i', 'iframe', 
+    'img', 'input', 'ins', 'kbd', 'label', 'map', 'mark', 'meter', 'noscript', 'object', 'output', 
+    'picture', 'progress', 'q', 'ruby', 's', 'samp', 'script', 'select', 'slot', 'small', 'span', 
+    'strong', 'sub', 'sup', 'svg', 'template', 'textarea', 'time', 'u', 'tt', 'var', 'video', 'wbr']
+
+    for tag in NON_BREAKING_ELEMENTS:
+       for i in html_text.findAll(tag): 
+            i.unwrap()
+
+    return html_text
+
 def scrape_job_ad(id):
     url = f"https://www.interamt.de/koop/app/stelle?id={id}"
     r = requests.get(url)
     soup = BeautifulSoup(r.content, "html.parser")
     
     stellenbeschreibung_text = soup.find('div', class_='ia-e-richtext ia-m-section ia-m-job-offer-display-panel ia-h-border--bottom')
-    stellenbeschreibung_text = stellenbeschreibung_text.get_text(strip = True, separator="\n")
+    stellenbeschreibung_text = remove_inline_elements(stellenbeschreibung_text)
+
+    # Add newline to li elements
+    for i in stellenbeschreibung_text.findAll('li'): 
+        i.insert_after("\n")
+
     data = {}
-    data["Stellenbeschreibung"] = stellenbeschreibung_text
+    data["Stellenbeschreibung"] = stellenbeschreibung_text.getText().strip()
 
     sidebar = soup.find("div", class_ = "ia-sidebar")
     elements =  sidebar.findAll("ul", recursive=False)
@@ -156,21 +174,70 @@ def scrape_job_ad(id):
 
     return data
 
+def remove_duplicates(job_ad):
+    """
+    This function removes duplicates of the Interamt Side and other data cleansing stuff.
+    """
+    # Behörde --> Behörde/Abteilung
+    job_ad.pop("Behörde/Abteilung", None)
+    # ID --> INTERAMT Angebots-ID
+    job_ad.pop("INTERAMT Angebots-ID", None)
+    # Stellenbezeichnung --> Bezeichnung
+    job_ad.pop("Bezeichnung", None)
+    # Besoldung / Entgelt (seperately)
+    job_ad.pop("Besoldung / Entgelt", None)
+    # Einsatzort PLZ / Ort (seperately)
+    job_ad.pop("Einsatzort PLZ / Ort", None)
+    # Entfernung (not relevant)
+    job_ad.pop("Entfernung", None)
+    # Bewerbungsfrist --> Frist
+    job_ad.pop("Frist", None)
+    # "" --> No field
+    job_ad = {k: v for k, v in job_ad.items() if v}
+    return job_ad
+
+def ireplace(old, new, text):
+    """
+    Credit to https://stackoverflow.com/questions/919056/case-insensitive-replace
+    """
+    idx = 0
+    while idx < len(text):
+        index_l = text.lower().find(old.lower(), idx)
+        if index_l == -1:
+            return text
+        text = text[:index_l] + new + text[index_l + len(old):]
+        idx = index_l + len(new) 
+    return text
+
+def replace_with_keys(job_ad_dict):
+    """
+    This function replaces value in job description with keys.
+    """
+    if "Stellenbeschreibung" not in job_ad_dict: return job_ad_dict
+    stellenbeschreibung = job_ad_dict["Stellenbeschreibung"]
+    for key in job_ad_dict:
+        if key == "Stellenbeschreibung": continue
+        # TODO: Fix later, also include eins, zwei etc.
+        if key == "Anzahl Stellen": continue
+        value = job_ad_dict[key]
+        stellenbeschreibung = ireplace(value, '{' + key + '}', stellenbeschreibung)
+    job_ad_dict["Stellenbeschreibung"] = stellenbeschreibung
+    
+    return job_ad_dict
+
 if __name__ == "__main__":
     conn = mongo_authenticate()
     list_of_new_job_ads = get_new_job_ads(conn)
-    print(list_of_new_job_ads)
-    #print("New job ads: " + str(len(list_of_new_job_ads)))
 
-    #extended_list_of_new_job_ads = list()
-    #for i in range(len(list_of_new_job_ads)):
-     #   id = list_of_new_job_ads[i]["ID"]
-     #   extended_job_ad = {**list_of_new_job_ads[i], **scrape_job_ad(id)} # Overwriting is ok
-     #   extended_list_of_new_job_ads.append(extended_job_ad)
-     #   print("Job ad " + str(i + 1) + " of " + str(len(list_of_new_job_ads)) + " scraped.")
-     #   time.sleep(2)
+    for i in range(len(list_of_new_job_ads)):
+        id = list_of_new_job_ads[i]["ID"]
+        extended_job_ad = {**list_of_new_job_ads[i], **scrape_job_ad(id)} # Overwriting is ok
+        # Cleansing
+        extended_job_ad = remove_duplicates(extended_job_ad)
+        extended_job_ad = replace_with_keys(extended_job_ad)
+        # Save to file or db
+        conn.insert_one(extended_job_ad)
+        # print("Job ad " + str(i + 1) + " of " + str(len(list_of_new_job_ads)) + " scraped.")
+        time.sleep(2)
 
-    # TODO: leaning duplicate attributes
-    
-    # Save to file or db
-    #conn.insert_many(extended_list_of_new_job_ads)
+    print(str(len(list_of_new_job_ads)))
