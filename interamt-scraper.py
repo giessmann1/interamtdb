@@ -54,7 +54,7 @@ def get_new_job_ads(conn):
     This approach is a bit slow on intial run, but more efficient for contious use (breaks when all new ads are collected).
     Default sorting of website by adding date and id
     '''
-    for i in range(2): #equals max 20 ads for testing
+    for i in range(loops):
         soup = BeautifulSoup(driver.page_source, "html.parser")
         table_body = soup.find("table").find("tbody")
         trs_last_tens = None
