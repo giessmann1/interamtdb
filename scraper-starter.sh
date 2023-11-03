@@ -6,4 +6,5 @@ then
     touch $filename
 fi
 
-python3 interamt-scraper.py >> $filename
+source venv/bin/activate
+python3 interamt-scraper.py

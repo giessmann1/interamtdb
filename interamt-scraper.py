@@ -32,7 +32,7 @@ def get_new_job_ads(conn):
     table = soup.find("table") # find table
     # get number of current job ads
     job_ads_max = int(table.find("caption").find_all("span")[1].text.replace(" Angebote gefunden", ""))
-    # print("Total job ads available: " + str(job_ads_max))
+    print("Total job ads available: " + str(job_ads_max))
     ADS_PER_LOOP = 10 # constant determined by website
     loops = int(job_ads_max / ADS_PER_LOOP) # plus one since remainder requires a loop, minus one since 10 ads are initially there
     last_loop_entries = job_ads_max % ADS_PER_LOOP
@@ -49,6 +49,28 @@ def get_new_job_ads(conn):
     else:
         last_entry_in_db = last_entry_in_db[0]
 
+    '''
+    Initial run
+    '''
+    # Load entire table first
+    if last_entry_in_db == None:
+        for i in range(100):
+            print("Loop " + str(i + 1) + " of " + str(loops) + " done.")
+            if (i != 1):
+                try:
+                    driver.find_element(By.ID, button_id).click()
+                    time.sleep(0.5) # custom operation
+                except Exception as e:
+                    print("Got exception")
+                    driver.find_element(By.ID, button_id).click()
+                    time.sleep(0.5) # custom operation
+        
+        trs = soup.find("table").find("tbody").find_all("tr")
+        print(len(trs))
+        for tr in trs:
+            list_of_dicts = get_tr_as_dict(tr)
+        return list_of_dicts
+    
     '''
     Click though all entries, save new entries to df in each loop.
     This approach is a bit slow on intial run, but more efficient for contious use (breaks when all new ads are collected).
@@ -73,12 +95,18 @@ def get_new_job_ads(conn):
                     break
             list_of_dicts.append(tr_as_dict)
 
-        # print("Loop " + str(i + 1) + " of " + str(loops) + "_max done.")
+        print("Loop " + str(i + 1) + " of " + str(loops) + " done.")
         if finished: break
         if (i != 1):
-            driver.find_element(By.ID, button_id).click()
-            time.sleep(1) # custom operatio
-
+            try:
+                # code that may cause exception
+                driver.find_element(By.ID, button_id).click()
+                time.sleep(1) # custom operation
+            except:
+                # code to run when exception occurs
+                print("Button-ID: " + button_id)
+                return None
+            
     driver.quit()
 
     '''
@@ -228,16 +256,17 @@ def replace_with_keys(job_ad_dict):
 if __name__ == "__main__":
     conn = mongo_authenticate()
     list_of_new_job_ads = get_new_job_ads(conn)
+    print(list_of_new_job_ads)
 
-    for i in range(len(list_of_new_job_ads)):
-        id = list_of_new_job_ads[i]["ID"]
-        extended_job_ad = {**list_of_new_job_ads[i], **scrape_job_ad(id)} # Overwriting is ok
-        # Cleansing
-        extended_job_ad = remove_duplicates(extended_job_ad)
-        extended_job_ad = replace_with_keys(extended_job_ad)
-        # Save to file or db
-        conn.insert_one(extended_job_ad)
-        # print("Job ad " + str(i + 1) + " of " + str(len(list_of_new_job_ads)) + " scraped.")
-        time.sleep(2)
+    #for i in range(len(list_of_new_job_ads)):
+    #    id = list_of_new_job_ads[i]["ID"]
+    #    extended_job_ad = {**list_of_new_job_ads[i], **scrape_job_ad(id)} # Overwriting is ok
+    #    # Cleansing
+    #    extended_job_ad = remove_duplicates(extended_job_ad)
+    #    extended_job_ad = replace_with_keys(extended_job_ad)
+    #    # Save to file or db
+    #    conn.insert_one(extended_job_ad)
+    #    print("Job ad " + str(i + 1) + " of " + str(len(list_of_new_job_ads)) + " scraped.")
+    #    time.sleep(2)
 
-    print(str(len(list_of_new_job_ads)))
+    #print(str(len(list_of_new_job_ads)))
