@@ -1,11 +1,14 @@
 #!/bin/bash
-# Add this to your crontab 0 23 * * * /bin/sh $HOME/interamtdb/scraper-starter.sh
-filename=$HOME/interamtdb/scraper-log.txt
+# Add this to your crontab 0 23 * * * /bin/bash $HOME/interamtdb/scraper-starter.sh
+cd $HOME/interamtdb
+filename=scraper-log.txt
 if [ ! -f $filename ]
 then
     touch $filename
 fi
 
 # If you use Python Virtual Environment
-source $HOME/interamtdb/venv/bin/activate
-python3 $HOME/interamtdb/interamt-scraper.py
+source venv/bin/activate
+echo $(date +'%Y-%m-%d') | tr "\n" " " >> $filename
+python3 interamt-scraper.py >> $filename
+deactivate

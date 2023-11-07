@@ -2,6 +2,8 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
+import dateutil.parser as parser
+from datetime import datetime
 from subprocess import getoutput
 from bs4 import BeautifulSoup
 import time
@@ -9,6 +11,13 @@ import urllib.parse
 import pymongo
 import json
 import requests
+
+def dicts_equal(d1,d2):
+    """ return True if all keys and values are the same """
+    return all(k in d2 and d1[k] == d2[k]
+               for k in d1) \
+        and all(k in d1 and d1[k] == d2[k]
+               for k in d2)
 
 def get_new_job_ads(conn):
     # Optimization to run on a headless server-side firefox, adjust if other setups are used.
@@ -46,29 +55,39 @@ def get_new_job_ads(conn):
 
     # Get last entry in db
     last_entry_in_db = list(conn.find({}, {"_id": 0, "ID": 1, "Eingestellt": 1}).sort([("Eingestellt", pymongo.DESCENDING), ("ID", pymongo.DESCENDING)]))
+
     if (len(last_entry_in_db) == 0):
         last_entry_in_db = None
     else:
-        last_entry_in_db = last_entry_in_db[0]
+        last_entry_in_db = dict(last_entry_in_db[0])
 
     '''
     Optimized code for the initial run.
     '''
     # Load entire table first
     if last_entry_in_db == None:
-        for i in range(5):
-            soup = BeautifulSoup(driver.page_source, "html.parser")
+        for i in range(loops):
             # print("Loop " + str(i + 1) + " of " + str(loops) + " done.")
+            if i == loops: break # Don't click on last run
             if (i != 1):
                 try:
+                    driver.implicitly_wait(20) # Wait max. 20s before throwing exception (JS animation and loading times)
                     driver.find_element(By.ID, button_id).click()
+                    time.sleep(3) # Min waiting time for animation
+                except:
+                    # print("Driver reloaded.")
+                    driver.implicitly_wait(20)
+                    driver.refresh() # keeps the previous state on interamt.de specifically
                     time.sleep(3)
-                except Exception as e:
-                    # print("Button missing, wait a bit longer.")
-                    time.sleep(3)
-                    driver.find_element(By.ID, button_id).click()
-                    time.sleep(3)
-        
+                    try:
+                        button_id = table.find("button").get("id") # sometimes the button-id changes
+                        driver.find_element(By.ID, button_id).click()
+                    except:
+                        print("Serious trouble here.")
+                        # print(BeautifulSoup(driver.page_source, "html.parser"))
+                        driver.quit()
+                        exit(1)
+
         soup = BeautifulSoup(driver.page_source, "html.parser")
         trs = soup.find("table").find("tbody").find_all("tr")
         for tr in trs:
@@ -95,7 +114,9 @@ def get_new_job_ads(conn):
             tr_as_dict = get_tr_as_dict(tr)
             if (last_entry_in_db is not None):
                 unique_identifier = dict((k, tr_as_dict[k]) for k in ["ID", "Eingestellt"] if k in tr_as_dict)
-                if (unique_identifier == last_entry_in_db):
+                unique_identifier["Eingestellt"] = datetime.strptime(unique_identifier["Eingestellt"], '%d.%m.%Y').date().strftime("%Y-%m-%d")
+                check = dicts_equal(unique_identifier, last_entry_in_db)
+                if (check):
                     finished = True
                     break
             list_of_dicts.append(tr_as_dict)
@@ -104,17 +125,27 @@ def get_new_job_ads(conn):
         if finished: break
         if (i != 1):
             try:
+                driver.implicitly_wait(20) # Wait max. 20s before throwing exception (JS animation and loading times)
                 driver.find_element(By.ID, button_id).click()
+                time.sleep(3) # Min waiting time for animation
+            except:
+                # print("Driver reloaded.")
+                driver.implicitly_wait(20)
+                driver.refresh() # keeps the previous state on interamt.de specifically
                 time.sleep(3)
-            except Exception as e:
-                # print("Button missing, wait a bit longer.")
-                time.sleep(3)
-                driver.find_element(By.ID, button_id).click()
-                time.sleep(3)
+                try:
+                    button_id = table.find("button").get("id") # sometimes the button-id changes
+                    driver.find_element(By.ID, button_id).click()
+                except:
+                    print("Serious trouble here.")
+                    # print(BeautifulSoup(driver.page_source, "html.parser"))
+                    driver.quit()
+                    exit(1)
 
     '''
     We kept the df instead of a list for a better future proof. IDs might not be unique.
     '''
+    driver.quit()
     return list_of_dicts
 
 def get_tr_as_dict(tr):
@@ -164,6 +195,7 @@ def mongo_authenticate():
     return mycol
 
 def remove_inline_elements(html_text):
+    if html_text == None: return None
     NON_BREAKING_ELEMENTS = ['a', 'abbr', 'acronym', 'audio', 'b', 'bdi', 'bdo', 'big', 'button', 
     'canvas', 'cite', 'code', 'data', 'datalist', 'del', 'dfn', 'em', 'embed', 'i', 'iframe', 
     'img', 'input', 'ins', 'kbd', 'label', 'map', 'mark', 'meter', 'noscript', 'object', 'output', 
@@ -178,30 +210,41 @@ def remove_inline_elements(html_text):
 
 def scrape_job_ad(id):
     url = f"https://www.interamt.de/koop/app/stelle?id={id}"
-    r = requests.get(url)
+
+    MAX_RETRIES = 20
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(max_retries=MAX_RETRIES)
+    session.mount('https://', adapter)
+    session.mount('http://', adapter)
+
+    r = session.get(url)
+
     soup = BeautifulSoup(r.content, "html.parser")
     
     stellenbeschreibung_text = soup.find('div', class_='ia-e-richtext ia-m-section ia-m-job-offer-display-panel ia-h-border--bottom')
     stellenbeschreibung_text = remove_inline_elements(stellenbeschreibung_text)
 
     # Add newline to li elements
-    for i in stellenbeschreibung_text.findAll('li'): 
-        i.insert_after("\n")
+    if stellenbeschreibung_text != None:
+        for i in stellenbeschreibung_text.findAll('li'): 
+            i.insert_after("\n")
 
     data = {}
-    data["Stellenbeschreibung"] = stellenbeschreibung_text.getText().strip()
+    if stellenbeschreibung_text != None:
+        data["Stellenbeschreibung"] = stellenbeschreibung_text.getText().strip()
 
     sidebar = soup.find("div", class_ = "ia-sidebar")
-    elements =  sidebar.findAll("ul", recursive=False)
-    lis = []
-    for ul in elements: lis.extend(ul.findAll("li"))
-    for li in lis:
-        li_as_list = get_li_as_list(li)
-        if (li_as_list is not None):
-            # Check if attribute already exists, this happens e.g. when more than one email is provided.
-            if li_as_list[0] in data:
-                li_as_list[0] = "_" + li_as_list[0]
-            data[li_as_list[0]] = li_as_list[1]
+    if sidebar != None:
+        elements =  sidebar.findAll("ul", recursive=False)
+        lis = []
+        for ul in elements: lis.extend(ul.findAll("li"))
+        for li in lis:
+            li_as_list = get_li_as_list(li)
+            if (li_as_list is not None):
+                # Check if attribute already exists, this happens e.g. when more than one email is provided.
+                if li_as_list[0] in data:
+                    li_as_list[0] = "_" + li_as_list[0]
+                data[li_as_list[0]] = li_as_list[1]
 
     return data
 
@@ -223,6 +266,10 @@ def remove_duplicates(job_ad):
     job_ad.pop("Entfernung", None)
     # Bewerbungsfrist --> Frist
     job_ad.pop("Frist", None)
+
+    # TODO: Do other cleansing stuff here.
+    job_ad["Eingestellt"] = datetime.strptime(job_ad["Eingestellt"], '%d.%m.%Y').date().strftime("%Y-%m-%d")
+
     # "" --> No field
     job_ad = {k: v for k, v in job_ad.items() if v}
     return job_ad
@@ -256,6 +303,12 @@ def replace_with_keys(job_ad_dict):
     
     return job_ad_dict
 
+# Just in case
+def update_column(conn):
+    for row in conn.find():
+        conn.update_one({"_id": row["_id"]}, {"$set": { 'Eingestellt': datetime.strptime(row["Eingestellt"], '%d.%m.%Y').date().strftime("%Y-%m-%d") }})
+
+
 if __name__ == "__main__":
     conn = mongo_authenticate()
     list_of_new_job_ads = get_new_job_ads(conn)
@@ -269,6 +322,6 @@ if __name__ == "__main__":
         # Save to file or db
         conn.insert_one(extended_job_ad)
         # print("Job ad " + str(i + 1) + " of " + str(len(list_of_new_job_ads)) + " scraped.")
-        time.sleep(2)
+        time.sleep(4)
 
     print(str(len(list_of_new_job_ads)))
