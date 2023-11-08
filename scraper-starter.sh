@@ -1,5 +1,7 @@
 #!/bin/bash
+
 # Add this to your crontab 0 23 * * * /bin/bash $HOME/interamtdb/scraper-starter.sh
+
 cd $HOME/interamtdb
 filename=scraper-log.txt
 if [ ! -f $filename ]
