@@ -175,9 +175,6 @@ def get_li_as_list(li):
     return [term, value]
 
 def mongo_authenticate():
-    host = "localhost"
-    port = 27017
-
     f_open = open(".secrets/mongodb_user.txt",'r')
     username = f_open.readlines()[0]
     f_open.close()
@@ -188,7 +185,8 @@ def mongo_authenticate():
     f_open.close()
     password = urllib.parse.quote_plus(password)
 
-    client = pymongo.MongoClient('mongodb://%s:%s@localhost' % (username, password), authSource="admin")
+    # Execution on remote server expected, therefore using localhost and default port.
+    client = pymongo.MongoClient('mongodb://%s:%s@localhost:27017' % (username, password), authSource="admin")
     mydb = client["interamtdb"]
     mycol = mydb["jobads"]
 
