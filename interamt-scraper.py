@@ -2,7 +2,6 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
-import dateutil.parser as parser
 from datetime import datetime
 from subprocess import getoutput
 from bs4 import BeautifulSoup
