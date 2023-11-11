@@ -7,6 +7,8 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import requests
 import csv
+import sys
+sys.path.append("..")
 from database_wrapper import *
 from langdetect import detect
 import time
@@ -32,7 +34,7 @@ def search_by_company(jwt, what):
 
 if __name__ == "__main__":
     try:
-        db = mongo_authenticate()
+        db = mongo_authenticate("../")
         cols = db.list_collection_names()
         print("Connection working:", cols)
     except Exception as e:
@@ -63,9 +65,9 @@ if __name__ == "__main__":
             print(*company, "found", len(job_ads), "job ads. Some might not be in German.")
 
             for ref in job_ads:
-                details = ba_api.job_details(jwt["access_token"], ref["refnr"])
                 # Filter ads not in German.
                 try:
+                    details = ba_api.job_details(jwt["access_token"], ref["refnr"]) # TODO: This can cause exceptions
                     lang_detect = detect(details["stellenbeschreibung"])
                     if lang_detect == "de":
                         insert_one_in_collection(col, details)

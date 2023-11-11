@@ -2,21 +2,21 @@ import urllib
 import pymongo
 
 # Returns connection object at database level
-def mongo_authenticate():
+def mongo_authenticate(path):
     # Authentication from remote client possible, add host.txt file under .secrets/ for server IP.
-    f_open = open("../.secrets/host.txt",'r')
+    f_open = open(path+".secrets/host.txt",'r')
     host = f_open.readlines()[0]
     f_open.close()
     host = urllib.parse.quote_plus(host)
 
     port = 27017
 
-    f_open = open("../.secrets/mongodb_user.txt",'r')
+    f_open = open(path+".secrets/mongodb_user.txt",'r')
     username = f_open.readlines()[0]
     f_open.close()
     username = urllib.parse.quote_plus(username)
 
-    f_open = open("../.secrets/mongodb_pwd.txt",'r')
+    f_open = open(path+".secrets/mongodb_pwd.txt",'r')
     password = f_open.readlines()[0]
     f_open.close()
     password = urllib.parse.quote_plus(password)
@@ -41,8 +41,6 @@ def insert_one_in_collection(col, doc):
 # Inserts multiple document in collection, requires connection object on collection level and list of dictionaries
 def insert_many_in_collection(col, list_of_docs):
     col.insert_many(list_of_docs)
-
-
 
 # Run the module directly to check if connection works
 if __name__ == "__main__":
