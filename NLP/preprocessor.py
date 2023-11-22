@@ -3,6 +3,7 @@ import re
 from nltk.tokenize import sent_tokenize, word_tokenize
 from nltk.corpus import stopwords
 import nltk
+from HanTa import HanoverTagger as ht
 import pandas as pd
 import sys
 sys.path.append('..')
@@ -13,54 +14,69 @@ nltk.download('stopwords')
 nltk.download('punkt')
 custom_stopwords = stopwords.words('german') + ['bzw']
 nlp = spacy.load('de_core_news_md', disable=['parser', 'ner'])
+tagger = ht.HanoverTagger('morphmodel_ger.pgz')
 
 
-def lemmatize_word(word):
-    return ''.join([token.lemma_ for token in nlp(word)]).lower()
-
-
-# Return a list with (type, processed_word)
-def process_word(word):
-    # Replace everything not text and lower case
-    processed_word = re.sub(r'[^a-zA-ZäöüßÄÖÜ]', '', word).lower()
-    if processed_word == '': return ('punctuation', None) # Return punctuations
-
+# Return a list with (processed_word, tag)
+def process_word(lemma, tag):
+    # Replace everything not text
+    processed_word = re.sub(r'[^a-zA-ZäöüßÄÖÜ]', '', lemma).lower()
+    if processed_word == '': return (pd.NA, 'NOTEXT')
     # Stopword removal
     processed_word = '' if processed_word in custom_stopwords else processed_word
-    if processed_word == '': return ('stopword', None) # Return stopwords
+    if processed_word == '': return (pd.NA, 'STOPWORD') # Return stopwords
 
-    # Lemmatization, slower than stemming but more accurate
-    processed_word = lemmatize_word(processed_word)
-    return ('word', processed_word)
+    # Put additional preprocessors here...
+
+    return (processed_word, tag)
 
 
-def interamt_preprocessor(interamt_col):
-    list_of_dicts = get_all_collection_docs(interamt_col, 1)
+def count_unique_values(df, column_name):
+    unique_values = df[column_name].value_counts().reset_index()
+    unique_values.columns = ['Unique Values', 'Frequency']
+    unique_values = unique_values.sort_values(by='Frequency', ascending=False)
+    return unique_values
+
+
+def interamt_preprocessor(interamt_col, limit=None):
+    list_of_dicts = get_all_collection_docs(interamt_col, limit)
     # Pre-filter if not all columns are needed
     list_of_filtered_dicts = [
         {key: d.get(key) for key in ['ID', 'Stellenbeschreibung']} for d in list_of_dicts]
     # Remove column references {}
-    list_of_filtered_dicts = [{'Stellenbeschreibung': re.sub(
-        r'\{.*?\}', '', entry['Stellenbeschreibung'])} for entry in list_of_filtered_dicts]
+    list_of_filtered_dicts = [
+    {
+        'ID': entry['ID'],
+        'Stellenbeschreibung': re.sub(r'\{.*?\}', '', entry['Stellenbeschreibung'])
+    }
+    for entry in list_of_filtered_dicts]
 
     df = pd.DataFrame(list_of_filtered_dicts)
-
-    # TODO: Somewhere a extra row is added
     
     # Tokenize sentences, this deletes nothing (maybe newlines?)
     df['sentence'] = df.apply(lambda row: sent_tokenize(
         row['Stellenbeschreibung'], 'german'), axis=1)
-    df = df.explode('sentence')
+    df.drop('Stellenbeschreibung', axis=1, inplace=True)
+    df = df.explode('sentence', ignore_index=True)
+    df = df[df['sentence'] != '\u200b'] # Remove \u200b characters
+    df['sentence_index'] = df.groupby('ID').cumcount()  # Enumerate Groups
 
     # Tokenize words, this deletes nothing
     df['word'] = df.apply(lambda row: word_tokenize(
         row['sentence'], 'german'), axis=1)
-    df = df.explode('word')
+    df.drop('sentence', axis=1, inplace=True)
+    
+    # Lemmatize words
+    df['word'] = df['word'].apply(tagger.tag_sent)
+    df = df.explode('word', ignore_index=True)
+    df = pd.concat([df, pd.DataFrame(df['word'].values.tolist())], axis=1)
+    df.drop('word', axis=1, inplace=True)
+    df.rename({df.columns[2]: 'word', df.columns[3]: 'lemma', df.columns[4]: 'tag'}, axis=1, inplace=True) # Maybe not the cleanest solution
 
     # Preprocessing
-    df[['type', 'processed_word']] = df['word'].apply(process_word).to_list()
+    df[['lemma', 'tag']] = df.apply(lambda row: process_word(row['lemma'], row['tag']), axis=1).to_list()
 
-    print(df)
+    return df
 
 
 if __name__ == '__main__':
@@ -75,4 +91,9 @@ if __name__ == '__main__':
 
     interamt_col = db['jobads']
 
-    interamt_preprocessor(interamt_col)
+    df = interamt_preprocessor(interamt_col, 2)
+
+    # For analysis only
+    df_lemma_nona = df.dropna()
+    result = count_unique_values(df_lemma_nona, 'lemma')
+    print(result)
