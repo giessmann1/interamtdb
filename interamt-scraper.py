@@ -39,7 +39,7 @@ def get_new_job_ads(conn):
     # Click cookie button
     time.sleep(3)
     driver.find_element(
-        By.XPATH, '//button[contains(@class, 'ia-e-button') and contains(@class, 'ia-e-button--primary') and contains(@class, 'ia-js-cookie-flyout__cta')]').click()
+        By.XPATH, "//button[contains(@class, 'ia-e-button') and contains(@class, 'ia-e-button--primary') and contains(@class, 'ia-js-cookie-flyout__cta')]").click()
     time.sleep(2)
 
     soup = BeautifulSoup(driver.page_source, 'html.parser')
