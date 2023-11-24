@@ -330,7 +330,7 @@ def replace_with_keys(job_ad_dict):
             continue
         value = job_ad_dict[key]
         stellenbeschreibung = ireplace(
-            value, '{' + key + '}', stellenbeschreibung)
+            value, '{' + key.replace(' ', '_') + '}', stellenbeschreibung)
     job_ad_dict['Stellenbeschreibung'] = stellenbeschreibung
 
     return job_ad_dict
