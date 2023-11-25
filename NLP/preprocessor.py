@@ -18,50 +18,108 @@ import webbrowser
 
 nltk.download('stopwords')
 nltk.download('punkt')
-custom_stopwords = stopwords.words('german') + ['bzw', 'sowie']
+custom_stopwords = stopwords.words('german') + ['bzw', 'sowie', 'ca', 'ggf', 'ab', 'incl', 'ggfs', 'z.b', 'je', 'inkl', 'u.a', 'o.g', 'zt', 'z.zt', 'usw', 'etwa', 'd.h']
 nlp = spacy.load('de_core_news_md', disable=['parser', 'ner'])
 tagger = ht.HanoverTagger('morphmodel_ger.pgz')
+pd.set_option('display.max_seq_items', None)
 
 REGEX_TO_FILTER = [
-    r"\/$",
+    r"\t",
     r"\{[^\}]+\}",
+    r"\s+[a-zA-Z0-9äÄöÖüÜß]+\/",
+    r"\-[^a-zA-Z0-9äÄöÖüÜß]",
+    r"^[a-zA-Z0-9äÄöÖüÜß]+[.-]+[a-zA-Z0-9äÄöÖüÜß]+\/", # This may cause trouble
+    r"^[a-zA-Z0-9äÄöÖüÜß]+\)",
+    r"\.\/",
+    r"\/\s+",
+    r"\/$",
+    r"^\/",
     r"\n",
-    r"\.$",
-    r"\:",
+    r"^\.{3}",
+    r"\.+\s+",
+    r"\:\s+",
+    r"\:$",
     r"\;",
-    r"\,",
+    r"\,\s+",
+    r"\s+\,",
     r"\!$",
     r"\?$",
     r"\-$",
+    r"\-\s+",
     r"^\-",
-    r"\*innen$",
+    r"\s+\-",
+    r"\-\s*$",
+
+    # Gender suffixes
+    r"\*innen",
+    r"\*in\s+",
     r"\*in$",
+    r"\*inn$", # Mistakes in data
+    r"\*n\s+",
     r"\*n$",
+    r"\*m\s+",
     r"\*m$",
+    r"\*r\s+",
     r"\*r$",
+    r"\*i$", # Mistakes in data
+
+    r"\:innen\s+",
     r"\:innen$",
+    r"\:in\s+",
     r"\:in$",
+    r"\:n\s+",
     r"\:n$",
+    r"\:m\s+",
     r"\:m$",
+    r"\:r\s+",
     r"\:r$",
+
+    r"\_innen\s+",
     r"\_innen$",
+    r"\_in\s+",
     r"\_in$",
+    r"\_n\s+",
     r"\_n$",
+    r"\_m\s+",
     r"\_m$",
+    r"\_r\s+",
     r"\_r$",
+
+    r"\/-r$",
+    r"\/r$",
+    r"\/-mann$",
+    r"\/-r\s+",
+    r"\/r\s+",
+    r"\/-mann\s+",
+
+    r"\*zze",
+    r"\*nja",
+    r"\*nja",
+
     r"\"",
-    r"\_",
     r"^\„",
     r"\“$",
+    r"^\“",
+    r"\”$",
     r"§",
-    r"^\{",
-    r"\}$",
     r"&",
     r"€",
-    r"^\(",
-    r"\)$",
     r"\/n$",
-    r"\/in$"
+    r"\/in$",
+    r"\s+\(",
+    r"^\(",
+    r"\)\s+",
+    r"\)$",
+    r"\($",
+    r"\,$",
+    r"\.+$",
+    r"\_{2,}",
+    r"\’$",
+    r"\’\s+",
+    r"\.\‘$",
+    r"^\‚",
+    r"\‘$",
+    r"^[a-zA-Z0-9äÄöÖüÜß]+\/",
 ]
 
 REGEX_WEBSITES = [  # Since we split the words first, we only need to identify parts of the URL
@@ -71,46 +129,71 @@ REGEX_WEBSITES = [  # Since we split the words first, we only need to identify p
     r"^http",
     r"^https",
     r".de/",
-    r".com/"
+    r".com/",
 ]
 
-# Return a list with (processed_word, tag)
+REGEX_EMAIL = [
+    r"@",
+    r"\(at\)",
+]
 
+REGEX_ROMAN = r"^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$"
 
 def process_word(lemma, tag):
+# Return a list with (processed_word, tag)
+
     # Check if regex to filter --> NA, NOTEXT
     for p in REGEX_TO_FILTER:
         matches = re.findall(p, lemma.lower())
         if len(matches) != 0:
             return (pd.NA, 'NOTEXT')
+        
+    # Check if only one character
+    if len(lemma) <= 1: return (pd.NA, 'SINGLECHAR')
 
     # Check if webpage, email or number
     for p in REGEX_WEBSITES:
         matches = re.findall(p, lemma.lower())
         if len(matches) != 0:
             return (pd.NA, 'WEBSITE')
-
-    matches = re.findall(r"@", lemma)
-    if len(matches) != 0:
-        return (pd.NA, 'EMAIL')
+        
+    for p in REGEX_EMAIL:
+        matches = re.findall(p, lemma)
+        if len(matches) != 0:
+            return (pd.NA, 'EMAIL')
 
     matches = re.findall(r"[0-9]+", lemma)
     if len(matches) != 0:
         return (pd.NA, 'NUMBER')
+    
+    matches = re.findall(REGEX_ROMAN, lemma.upper())
+    if len(matches) != 0:
+        return (pd.NA, 'ROMAN')
 
     # Check if stopword
     if lemma.lower() in custom_stopwords:
         return (pd.NA, 'STOPWORD')
 
     # Default
+    lemma = lemma.lower()
+    #lemma = re.sub(r"[^a-zA-ZäÄöÖüÜß]", '', lemma)
+
     return (lemma, tag)
 
 
-def count_unique_values(df, column_name):
-    unique_values = df[column_name].value_counts().reset_index()
-    unique_values.columns = ['Unique Values', 'Frequency']
-    unique_values = unique_values.sort_values(by='Frequency', ascending=False)
-    return unique_values
+def frequency_by_columns(df, column1, column2):
+    result = df.groupby([column1, column2]).size().reset_index(name='Frequency')
+    result = result.sort_values(by='Frequency', ascending=False)
+    return result
+
+
+def frequency_by_one_column(dataframe, column_name):
+    counts = dataframe[column_name].value_counts()
+    result_df = pd.DataFrame({
+        column_name: counts.index,
+        'Frequency': counts.values
+    })
+    return result_df
 
 
 def placeholder_no_whitespace(input_string):
@@ -125,25 +208,24 @@ def placeholder_no_whitespace(input_string):
 def extract_regex_matches(strings, regex_patterns):
     result = []
     for s in strings:
+        s = re.sub('\xa0', ' ', s) # Replace '\xa0' characters
+        s = re.sub('…', '...', s) # Replace U+2026 characters
+        s = re.sub('–', '-', s) # Replace english version
         for pattern in regex_patterns:
-            matches = re.findall(pattern, s)
-            if len(matches) == 0:
-                continue  # Inner loop
-            s = s.replace(matches[0], f" {matches[0]} ")
-        new_result = s.split(' ')
+            s = re.sub(pattern, r' \g<0> ', s)
+        new_result = s.strip().split(' ')
         new_result = [item for item in new_result if item != '']
         result.extend(new_result)
     return result
 
 
-def print_df_as_html(df):
-    pd.set_option('display.max_seq_items', None)
+def view_df_as_html(df):
     html = df.to_html()
     path = os.path.abspath('temp.html')
     url = 'file://' + path
     with open(path, 'w') as f:
         f.write(html)
-    webbrowser.open(url)
+    #webbrowser.open(url)
 
 
 def interamt_preprocessor(interamt_col, limit=None):
@@ -155,33 +237,37 @@ def interamt_preprocessor(interamt_col, limit=None):
     list_of_filtered_dicts = [
         {
             'ID': entry['ID'],
-            # re.sub(r'\{.*?\}', '', entry['Stellenbeschreibung'])
             'Stellenbeschreibung': entry['Stellenbeschreibung']
         }
         for entry in list_of_filtered_dicts]  # --> Replace
 
     df = pd.DataFrame(list_of_filtered_dicts)
+    print("Dataframe loaded.")
 
     # Tokenize sentences
     df['sentence'] = df.apply(lambda row: sent_tokenize(
         row['Stellenbeschreibung'], 'german'), axis=1)
     df.drop('Stellenbeschreibung', axis=1, inplace=True)
     df = df.explode('sentence', ignore_index=True)
-    df = df[df['sentence'] != '\u200b']  # Remove \u200b characters
+    df = df[df['sentence'] != '\u200b']  # Remove solo \u200b characters
     df['sentence_index'] = df.groupby('ID').cumcount()  # Enumerate Groups
+    print("Sentences tokenized.")
 
     # First escape placeholders with whitespaces
     df['sentence'] = df.apply(lambda row:
                               placeholder_no_whitespace(row['sentence']), axis=1)
+    print("Placeholder spaces replaced.")
 
     # Tokenize words, this deletes nothing (other than nltk tokenizers)
     df['word'] = df.apply(lambda row:
                           row['sentence'].split(" "), axis=1)
     df.drop('sentence', axis=1, inplace=True)
+    print("Words tokenized.")
 
     # Seperate special characters for tagging if needed. We need them in the dataset in order to set the text back together later and since the HannoverTagger can't handle spaces. --> Possible request
     df['word'] = df.apply(lambda row:
                           extract_regex_matches(row['word'], REGEX_TO_FILTER), axis=1)
+    print("Special character seperated.")
 
     # Lemmatize words
     df['word'] = df['word'].apply(tagger.tag_sent)
@@ -189,10 +275,12 @@ def interamt_preprocessor(interamt_col, limit=None):
     df = pd.concat([df, pd.DataFrame(df['word'].values.tolist())], axis=1)
     df.drop('word', axis=1, inplace=True)
     df.rename({df.columns[2]: 'word', df.columns[3]: 'lemma', df.columns[4]: 'tag'}, axis=1, inplace=True)  # Maybe not the cleanest solution
+    print("Lemmatization done.")
 
     # Preprocessing
     df[['lemma', 'tag']] = df.apply(lambda row: process_word(
         row['lemma'], row['tag']), axis=1).to_list()
+    print("Preprocessing done.")
 
     return df
 
@@ -209,9 +297,11 @@ if __name__ == '__main__':
 
     interamt_col = db['jobads']
 
-    df = interamt_preprocessor(interamt_col, 30)
+    df = interamt_preprocessor(interamt_col, 100)
 
     # For analysis only
     df_lemma_nona = df.dropna()
-    result = count_unique_values(df_lemma_nona, 'lemma')
-    print_df_as_html(result)
+    result = frequency_by_one_column(df_lemma_nona, 'lemma')
+    # result = frequency_by_columns(df_lemma_nona, 'lemma', 'tag')
+
+    view_df_as_html(result)
