@@ -15,6 +15,7 @@ For testing only
 '''
 import os
 import webbrowser
+import csv
 
 nltk.download('stopwords')
 nltk.download('punkt')
@@ -28,7 +29,7 @@ REGEX_TO_FILTER = [
     r"\{[^\}]+\}",
     r"\s+[a-zA-Z0-9äÄöÖüÜß]+\/",
     r"\-[^a-zA-Z0-9äÄöÖüÜß]",
-    r"^[a-zA-Z0-9äÄöÖüÜß]+[.-]+[a-zA-Z0-9äÄöÖüÜß]+\/", # This may cause trouble
+    r"^[a-zA-Z0-9äÄöÖüÜß]+[.-]+[a-zA-Z0-9äÄöÖüÜß]+\/",  # This may cause trouble
     r"^[a-zA-Z0-9äÄöÖüÜß]+\)",
     r"\.\/",
     r"\/\s+",
@@ -54,14 +55,14 @@ REGEX_TO_FILTER = [
     r"\*innen",
     r"\*in\s+",
     r"\*in$",
-    r"\*inn$", # Mistakes in data
+    r"\*inn$",  # Mistakes in data
     r"\*n\s+",
     r"\*n$",
     r"\*m\s+",
     r"\*m$",
     r"\*r\s+",
     r"\*r$",
-    r"\*i$", # Mistakes in data
+    r"\*i$",  # Mistakes in data
 
     r"\:innen\s+",
     r"\:innen$",
@@ -119,7 +120,9 @@ REGEX_TO_FILTER = [
     r"\.\‘$",
     r"^\‚",
     r"\‘$",
+    # Needs to be at the end
     r"^[a-zA-Z0-9äÄöÖüÜß]+\/",
+    r"^[a-zA-Z0-9äÄöÖüÜß]+\*",
 ]
 
 REGEX_WEBSITES = [  # Since we split the words first, we only need to identify parts of the URL
@@ -139,24 +142,26 @@ REGEX_EMAIL = [
 
 REGEX_ROMAN = r"^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$"
 
+
 def process_word(lemma, tag):
-# Return a list with (processed_word, tag)
+    # Return a list with (processed_word, tag)
 
     # Check if regex to filter --> NA, NOTEXT
     for p in REGEX_TO_FILTER:
         matches = re.findall(p, lemma.lower())
         if len(matches) != 0:
             return (pd.NA, 'NOTEXT')
-        
+
     # Check if only one character
-    if len(lemma) <= 1: return (pd.NA, 'SINGLECHAR')
+    if len(lemma) <= 1:
+        return (pd.NA, 'SINGLECHAR')
 
     # Check if webpage, email or number
     for p in REGEX_WEBSITES:
         matches = re.findall(p, lemma.lower())
         if len(matches) != 0:
             return (pd.NA, 'WEBSITE')
-        
+
     for p in REGEX_EMAIL:
         matches = re.findall(p, lemma)
         if len(matches) != 0:
@@ -165,7 +170,7 @@ def process_word(lemma, tag):
     matches = re.findall(r"[0-9]+", lemma)
     if len(matches) != 0:
         return (pd.NA, 'NUMBER')
-    
+
     matches = re.findall(REGEX_ROMAN, lemma.upper())
     if len(matches) != 0:
         return (pd.NA, 'ROMAN')
@@ -176,13 +181,14 @@ def process_word(lemma, tag):
 
     # Default
     lemma = lemma.lower()
-    #lemma = re.sub(r"[^a-zA-ZäÄöÖüÜß]", '', lemma)
+    # lemma = re.sub(r"[^a-zA-ZäÄöÖüÜß]", '', lemma)
 
     return (lemma, tag)
 
 
 def frequency_by_columns(df, column1, column2):
-    result = df.groupby([column1, column2]).size().reset_index(name='Frequency')
+    result = df.groupby([column1, column2]).size(
+    ).reset_index(name='Frequency')
     result = result.sort_values(by='Frequency', ascending=False)
     return result
 
@@ -208,9 +214,9 @@ def placeholder_no_whitespace(input_string):
 def extract_regex_matches(strings, regex_patterns):
     result = []
     for s in strings:
-        s = re.sub('\xa0', ' ', s) # Replace '\xa0' characters
-        s = re.sub('…', '...', s) # Replace U+2026 characters
-        s = re.sub('–', '-', s) # Replace english version
+        s = re.sub('\xa0', ' ', s)  # Replace '\xa0' characters
+        s = re.sub('…', '...', s)  # Replace U+2026 characters
+        s = re.sub('–', '-', s)  # Replace english version
         for pattern in regex_patterns:
             s = re.sub(pattern, r' \g<0> ', s)
         new_result = s.strip().split(' ')
@@ -225,7 +231,7 @@ def view_df_as_html(df):
     url = 'file://' + path
     with open(path, 'w') as f:
         f.write(html)
-    #webbrowser.open(url)
+    webbrowser.open(url)
 
 
 def interamt_preprocessor(interamt_col, limit=None):
@@ -297,11 +303,17 @@ if __name__ == '__main__':
 
     interamt_col = db['jobads']
 
-    df = interamt_preprocessor(interamt_col, 100)
+    if len(sys.argv) == 1:
+        limit = None
+    else:
+        limit = int(sys.argv[1])
 
-    # For analysis only
-    df_lemma_nona = df.dropna()
-    result = frequency_by_one_column(df_lemma_nona, 'lemma')
+    # Interamt
+    df = interamt_preprocessor(interamt_col, limit)
+    df['word'] = df['word'].apply(lambda x: x.replace('\n', '\\n'))
+    df.to_csv('interamt_vocab.csv', quoting=csv.QUOTE_ALL, index=False)
+
+    # For testing purposes
+    # df_lemma_nona = df.dropna()
+    # result = frequency_by_one_column(df_lemma_nona, 'lemma')
     # result = frequency_by_columns(df_lemma_nona, 'lemma', 'tag')
-
-    view_df_as_html(result)
