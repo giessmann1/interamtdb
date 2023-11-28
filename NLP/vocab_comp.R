@@ -1,1 +1,1 @@
-data1 <- read.csv("interamt_vocab.csv", header=TRUE, na.strings=c(''))
+data1 <- read.csv("interamt_vocab.csv", header = TRUE, na.strings = c(" "))

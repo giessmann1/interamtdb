@@ -15,7 +15,6 @@ For testing only
 '''
 import os
 import webbrowser
-import csv
 
 nltk.download('stopwords')
 nltk.download('punkt')
@@ -53,45 +52,9 @@ REGEX_TO_FILTER = [
 
     # Gender suffixes
     r"\*innen",
-    r"\*in\s+",
-    r"\*in$",
-    r"\*inn$",  # Mistakes in data
-    r"\*n\s+",
-    r"\*n$",
-    r"\*m\s+",
-    r"\*m$",
-    r"\*r\s+",
-    r"\*r$",
-    r"\*i$",  # Mistakes in data
-
-    r"\:innen\s+",
-    r"\:innen$",
-    r"\:in\s+",
-    r"\:in$",
-    r"\:n\s+",
-    r"\:n$",
-    r"\:m\s+",
-    r"\:m$",
-    r"\:r\s+",
-    r"\:r$",
-
-    r"\_innen\s+",
-    r"\_innen$",
-    r"\_in\s+",
-    r"\_in$",
-    r"\_n\s+",
-    r"\_n$",
-    r"\_m\s+",
-    r"\_m$",
-    r"\_r\s+",
-    r"\_r$",
-
-    r"\/-r$",
-    r"\/r$",
-    r"\/-mann$",
-    r"\/-r\s+",
-    r"\/r\s+",
-    r"\/-mann\s+",
+    r"\*innen",
+    r"[\*:\_](in|innen|n|m|r)\s*",
+    r"\/(-r|-mann|r)\s*",
 
     r"\*zze",
     r"\*nja",
@@ -127,12 +90,8 @@ REGEX_TO_FILTER = [
 
 REGEX_WEBSITES = [  # Since we split the words first, we only need to identify parts of the URL
     r"^www",
-    r".de$",
-    r".com$",
-    r"^http",
-    r"^https",
-    r".de/",
-    r".com/",
+    r"\.(de|com)(\/|$)",
+    r"^https?",
 ]
 
 REGEX_EMAIL = [
@@ -141,7 +100,6 @@ REGEX_EMAIL = [
 ]
 
 REGEX_ROMAN = r"^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$"
-
 
 def process_word(lemma, tag):
     # Return a list with (processed_word, tag)
@@ -187,19 +145,16 @@ def process_word(lemma, tag):
 
 
 def frequency_by_columns(df, column1, column2):
-    result = df.groupby([column1, column2]).size(
-    ).reset_index(name='Frequency')
+    result = df.groupby([column1, column2]).size().reset_index(name='Frequency')
     result = result.sort_values(by='Frequency', ascending=False)
     return result
 
 
 def frequency_by_one_column(dataframe, column_name):
     counts = dataframe[column_name].value_counts()
-    result_df = pd.DataFrame({
-        column_name: counts.index,
-        'Frequency': counts.values
-    })
-    return result_df
+    return pd.DataFrame(
+        {column_name: counts.index, 'Frequency': counts.values}
+    )
 
 
 def placeholder_no_whitespace(input_string):
@@ -239,13 +194,6 @@ def interamt_preprocessor(interamt_col, limit=None):
     # Pre-filter if not all columns are needed
     list_of_filtered_dicts = [
         {key: d.get(key) for key in ['ID', 'Stellenbeschreibung']} for d in list_of_dicts]
-    # Remove column references {}
-    list_of_filtered_dicts = [
-        {
-            'ID': entry['ID'],
-            'Stellenbeschreibung': entry['Stellenbeschreibung']
-        }
-        for entry in list_of_filtered_dicts]  # --> Replace
 
     df = pd.DataFrame(list_of_filtered_dicts)
     print("Dataframe loaded.")
@@ -260,19 +208,16 @@ def interamt_preprocessor(interamt_col, limit=None):
     print("Sentences tokenized.")
 
     # First escape placeholders with whitespaces
-    df['sentence'] = df.apply(lambda row:
-                              placeholder_no_whitespace(row['sentence']), axis=1)
+    df['sentence'] = df.apply(lambda row: placeholder_no_whitespace(row['sentence']), axis=1)
     print("Placeholder spaces replaced.")
 
     # Tokenize words, this deletes nothing (other than nltk tokenizers)
-    df['word'] = df.apply(lambda row:
-                          row['sentence'].split(" "), axis=1)
+    df['word'] = df.apply(lambda row: str(row['sentence']).split(" "), axis=1)
     df.drop('sentence', axis=1, inplace=True)
     print("Words tokenized.")
 
     # Seperate special characters for tagging if needed. We need them in the dataset in order to set the text back together later and since the HannoverTagger can't handle spaces. --> Possible request
-    df['word'] = df.apply(lambda row:
-                          extract_regex_matches(row['word'], REGEX_TO_FILTER), axis=1)
+    df['word'] = df.apply(lambda row: extract_regex_matches(row['word'], REGEX_TO_FILTER), axis=1)
     print("Special character seperated.")
 
     # Lemmatize words
@@ -291,6 +236,12 @@ def interamt_preprocessor(interamt_col, limit=None):
     return df
 
 
+def ba_preprocessor(ba_col, limit=None):
+    list_of_dicts = get_all_collection_docs(ba_col, limit)
+    print("Dataframe loaded.")
+    return pd.DataFrame(list_of_dicts)
+
+
 if __name__ == '__main__':
     try:
         db = mongo_authenticate('../')
@@ -302,16 +253,19 @@ if __name__ == '__main__':
         exit(1)
 
     interamt_col = db['jobads']
+    ba_col = db['privateads']
 
-    if len(sys.argv) == 1:
-        limit = None
-    else:
-        limit = int(sys.argv[1])
-
+    limit = None if len(sys.argv) == 1 else int(sys.argv[1])
+    '''
     # Interamt
     df = interamt_preprocessor(interamt_col, limit)
     df['word'] = df['word'].apply(lambda x: x.replace('\n', '\\n'))
     df.to_csv('interamt_vocab.csv', quoting=csv.QUOTE_ALL, index=False)
+    '''
+
+    # BA
+    df = db_preprocessor(ba_col, limit)
+    view_df_as_html(df)
 
     # For testing purposes
     # df_lemma_nona = df.dropna()

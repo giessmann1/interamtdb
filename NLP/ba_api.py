@@ -13,10 +13,14 @@ with github_repo('bundesAPI', 'jobsuche-api', ref='master'):
     import api_example as ba_api
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import pandas as pd
+from preprocessor import view_df_as_html, frequency_by_one_column
+import re
+from nltk.corpus import stopwords
+custom_stopwords = stopwords.words('german') + ['bzw', 'sowie', 'ca', 'ggf', 'ab', 'incl', 'ggfs', 'z.b', 'je', 'inkl', 'u.a', 'o.g', 'zt', 'z.zt', 'usw', 'etwa', 'd.h', '']
+
 
 # Overwriting method, as we search by companies not location
-
-
 def search_by_company(jwt, what):
     '''search for jobs. params can be found here: https://jobsuche.api.bund.dev/'''
     params = (
@@ -36,6 +40,23 @@ def search_by_company(jwt, what):
     return response.json()
 
 
+def remove_false_positives(ba_col, search_col, regex):
+    '''
+    employers = get_one_column(ba_col, search_col)
+    #values_list = [d['arbeitgeber'] for d in employers]
+    df = pd.DataFrame(employers)
+    df = frequency_by_one_column(df, 'arbeitgeber')
+    view_df_as_html(df)
+    '''
+    employers = get_one_column(ba_col, search_col)
+    df = pd.DataFrame({'arbeitgeber': LIST_PUBLIC_FALSE_POSITIVES})
+    view_df_as_html(df)
+
+
+
+
+
+
 if __name__ == '__main__':
     try:
         db = mongo_authenticate('../')
@@ -51,6 +72,8 @@ if __name__ == '__main__':
         db.create_collection(name=col_name)
 
     col = db[col_name]
+
+    # Remove false positives
 
     # Load list of private companies
     with open('company_list_cleansed.csv', newline='') as f:
