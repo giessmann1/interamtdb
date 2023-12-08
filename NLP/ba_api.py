@@ -40,18 +40,18 @@ def search_by_company(jwt, what):
     return response.json()
 
 
-def remove_false_positives(ba_col, search_col, regex):
+def remove_false_positives(ba_col):
     '''
-    employers = get_one_column(ba_col, search_col)
-    #values_list = [d['arbeitgeber'] for d in employers]
-    df = pd.DataFrame(employers)
-    df = frequency_by_one_column(df, 'arbeitgeber')
-    view_df_as_html(df)
+    
+    Öffentlicher Dienst, Organisationen
+    Bildung, Erziehung, Unterricht
+    Wissenschaft, Forschung, Entwicklung
+    Logistik, Transport, Verkehr
     '''
-    employers = get_one_column(ba_col, search_col)
-    df = pd.DataFrame({'arbeitgeber': LIST_PUBLIC_FALSE_POSITIVES})
+    industry = get_one_column(ba_col, 'branchengruppe')
+    df = pd.DataFrame(industry)
+    df = frequency_by_one_column(df, 'branchengruppe')
     view_df_as_html(df)
-
 
 
 
@@ -74,6 +74,8 @@ if __name__ == '__main__':
     col = db[col_name]
 
     # Remove false positives
+    remove_false_positives(col)
+    exit(0)
 
     # Load list of private companies
     with open('company_list_cleansed.csv', newline='') as f:
