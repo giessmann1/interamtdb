@@ -159,15 +159,15 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-
 # Custom
 .secrets/
 interamtdb-data/
 geckodriver.log
 scraper-log.txt
 temp.html
-# *_vocab.csv
+*_vocab.csv
 
 # R
 .Rapp.history
 .Rhistory
+.RData

@@ -16,7 +16,7 @@ import csv
 
 nltk.download('stopwords', quiet=True)
 nltk.download('punkt', quiet=True)
-custom_stopwords = stopwords.words('german') + ['bzw', 'sowie', 'ca', 'ggf', 'ab', 'incl', 'ggfs', 'z.b', 'je', 'inkl', 'u.a', 'o.g', 'zt', 'z.zt', 'usw', 'etwa', 'd.h']
+custom_stopwords = stopwords.words('german') + ['bzw', 'sowie', 'ca', 'ggf', 'ab', 'incl', 'ggfs', 'z.b', 'je', 'inkl', 'u.a', 'o.g', 'zt', 'z.zt', 'usw', 'etwa', 'd.h', 'i.v.m', 'ff']
 nlp = spacy.load('de_core_news_md', disable=['parser', 'ner'])
 tagger = ht.HanoverTagger('morphmodel_ger.pgz')
 pd.set_option('display.max_seq_items', None)
@@ -327,12 +327,14 @@ if __name__ == '__main__':
 
     limit = None if len(sys.argv) == 1 else int(sys.argv[1])
     
+    '''
     # Interamt
     print(bcolors.OKBLUE + "Interamt preprocessing started..." + bcolors.ENDC)
     df = interamt_preprocessor(interamt_col, limit)
     # view_df_as_html(df)
     df['word'] = df['word'].apply(lambda x: x.replace('\n', '\\n'))
     df.to_csv('public_vocab.csv', quoting=csv.QUOTE_ALL, index=False)
+    '''
     
     # BA
     print(bcolors.OKBLUE + "BA preprocessing started..." + bcolors.ENDC)
