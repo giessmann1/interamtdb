@@ -8,13 +8,11 @@ import pandas as pd
 import sys
 sys.path.append('..')
 from database_wrapper import *
+from sector_tagger import *
+from interamt_scraper import ireplace
+from helper import view_df_as_html, frequency_by_columns, frequency_by_one_column, bcolors
+import csv
 # Run this before: python3 -m spacy download de_core_news_md
-
-'''
-For testing only
-'''
-import os
-import webbrowser
 
 nltk.download('stopwords', quiet=True)
 nltk.download('punkt', quiet=True)
@@ -143,20 +141,6 @@ def process_word(lemma, tag):
 
     return (lemma, tag)
 
-
-def frequency_by_columns(df, column1, column2):
-    result = df.groupby([column1, column2]).size().reset_index(name='Frequency')
-    result = result.sort_values(by='Frequency', ascending=False)
-    return result
-
-
-def frequency_by_one_column(dataframe, column_name):
-    counts = dataframe[column_name].value_counts()
-    return pd.DataFrame(
-        {column_name: counts.index, 'Frequency': counts.values}
-    )
-
-
 def placeholder_no_whitespace(input_string):
     pattern = r'\{[^\}]*\s[^\}]*\}'
     matches = re.findall(pattern, input_string)
@@ -180,23 +164,28 @@ def extract_regex_matches(strings, regex_patterns):
     return result
 
 
-def view_df_as_html(df):
-    html = df.to_html()
-    path = os.path.abspath('temp.html')
-    url = 'file://' + path
-    with open(path, 'w') as f:
-        f.write(html)
-    webbrowser.open(url)
-
-
 def interamt_preprocessor(interamt_col, limit=None):
     list_of_dicts = get_all_collection_docs(interamt_col, limit)
     # Pre-filter if not all columns are needed
     list_of_filtered_dicts = [
-        {key: d.get(key) for key in ['ID', 'Stellenbeschreibung']} for d in list_of_dicts]
-
+        {key: d.get(key) for key in ['ID', 'Behörde', 'Stellenbeschreibung']} for d in list_of_dicts]
     df = pd.DataFrame(list_of_filtered_dicts)
+    df = df.dropna() # Removes 'Stellenbeschreibung' when None --> eg. references to websites
     print("Dataframe loaded.")
+
+    # Remove employers not public
+    employers_to_include = frequency_by_one_column(df, 'Behörde')
+    sum_employers = len(employers_to_include.index)
+    employers_to_include['Tags'] = employers_to_include.apply(lambda row: ' '.join(find_tags(str(row['Behörde']), public_tagger)), axis=1)
+    employers_to_include = employers_to_include.replace(r'^\s*$', pd.NA, regex=True)
+    employers_to_include = employers_to_include.dropna()
+    sum_found = sum_employers - len(employers_to_include.index)
+    print(f"{sum_found} of {sum_employers} ({round(sum_found / sum_employers * 100,2)}%) are removed.")
+
+    employers_to_include_list = employers_to_include['Behörde'].tolist()
+    df = df[df['Behörde'].isin(employers_to_include_list)]
+    df = df.drop('Behörde', axis=1)
+    print("Non-public employers excluded.")
 
     # Tokenize sentences
     df['sentence'] = df.apply(lambda row: sent_tokenize(
@@ -236,10 +225,91 @@ def interamt_preprocessor(interamt_col, limit=None):
     return df
 
 
+# TODO: Harmonize with same method from interamt_scraper.py
+def replace_with_keys(job_ad_dict):
+    '''
+    This function replaces value in job description with keys.
+    '''
+    if 'stellenbeschreibung' not in job_ad_dict:
+        return ''
+    stellenbeschreibung = job_ad_dict['stellenbeschreibung']
+    for key in job_ad_dict:
+        if key == 'stellenbeschreibung':
+            continue
+        value = job_ad_dict[key]
+        if value == None:
+            continue
+        stellenbeschreibung = ireplace(
+            value, '{' + key.replace(' ', '_') + '}', stellenbeschreibung)
+
+    return stellenbeschreibung
+
+
 def ba_preprocessor(ba_col, limit=None):
     list_of_dicts = get_all_collection_docs(ba_col, limit)
+    list_of_filtered_dicts = [
+        {key: d.get(key) for key in ['refnr', 'aktuelleVeroeffentlichungsdatum', 'arbeitgeber', 'branche', 'eintrittsdatum', 'titel', 'beruf', 'stellenbeschreibung', 'tarifvertrag', 'tarifvertrag', 'externeUrl']} for d in list_of_dicts]
+
+    df = pd.DataFrame(list_of_filtered_dicts)
     print("Dataframe loaded.")
-    return pd.DataFrame(list_of_dicts)
+
+    # Remove public and non-profit employers
+    employers_to_exclude = frequency_by_one_column(df, 'arbeitgeber')
+    sum_employers = len(employers_to_exclude.index)
+    employers_to_exclude['Tags'] = employers_to_exclude.apply(lambda row: ' '.join(find_tags_two_methods(str(row['arbeitgeber']), public_tagger, nonprofit_tagger)), axis=1)
+    employers_to_exclude = employers_to_exclude.replace(r'^\s*$', pd.NA, regex=True)
+    employers_to_exclude = employers_to_exclude.dropna()
+    sum_found = len(employers_to_exclude.index)
+    print(f"{sum_found} of {sum_employers} ({round(sum_found / sum_employers * 100,2)}%) are removed.")
+
+    merged_df = df.merge(employers_to_exclude, on='arbeitgeber', how='left', indicator=True)
+    df = merged_df[merged_df['_merge'] == 'left_only'].drop(columns=['_merge'])
+    df = df.drop('Frequency', axis=1)
+    df = df.drop('Tags', axis=1)
+    print("Public and Non-profit employers excluded.")
+
+    # Replace key
+    df['stellenbeschreibung'] = df.apply(lambda row: replace_with_keys(dict(row)), axis=1)
+    print("Keys replaced.")
+    df = df[['refnr', 'stellenbeschreibung']]
+    df.rename({'refnr': 'ID'}, axis=1, inplace=True) # The same as interamt ads
+
+    # Tokenize sentences
+    df['sentence'] = df.apply(lambda row: sent_tokenize(
+        row['stellenbeschreibung'], 'german'), axis=1)
+    df.drop('stellenbeschreibung', axis=1, inplace=True)
+    df = df.explode('sentence', ignore_index=True)
+    df = df[df['sentence'] != '\u200b']  # Remove solo \u200b characters
+    df['sentence_index'] = df.groupby('ID').cumcount()  # Enumerate Groups
+    print("Sentences tokenized.")
+
+    # First escape placeholders with whitespaces
+    df['sentence'] = df.apply(lambda row: placeholder_no_whitespace(row['sentence']), axis=1)
+    print("Placeholder spaces replaced.")
+
+    # Tokenize words, this deletes nothing (other than nltk tokenizers)
+    df['word'] = df.apply(lambda row: str(row['sentence']).split(" "), axis=1)
+    df.drop('sentence', axis=1, inplace=True)
+    print("Words tokenized.")
+
+    # Seperate special characters for tagging if needed. We need them in the dataset in order to set the text back together later and since the HannoverTagger can't handle spaces. --> Possible request
+    df['word'] = df.apply(lambda row: extract_regex_matches(row['word'], REGEX_TO_FILTER), axis=1)
+    print("Special character seperated.")
+
+    # Lemmatize words
+    df['word'] = df['word'].apply(tagger.tag_sent)
+    df = df.explode('word', ignore_index=True)
+    df = pd.concat([df, pd.DataFrame(df['word'].values.tolist())], axis=1)
+    df.drop('word', axis=1, inplace=True)
+    df.rename({df.columns[2]: 'word', df.columns[3]: 'lemma', df.columns[4]: 'tag'}, axis=1, inplace=True)  # Maybe not the cleanest solution
+    print("Lemmatization done.")
+
+    # Preprocessing
+    df[['lemma', 'tag']] = df.apply(lambda row: process_word(
+        row['lemma'], row['tag']), axis=1).to_list()
+    print("Preprocessing done.")
+
+    return df
 
 
 if __name__ == '__main__':
@@ -256,18 +326,24 @@ if __name__ == '__main__':
     ba_col = db['privateads']
 
     limit = None if len(sys.argv) == 1 else int(sys.argv[1])
-    '''
+    
     # Interamt
+    print(bcolors.OKBLUE + "Interamt preprocessing started..." + bcolors.ENDC)
     df = interamt_preprocessor(interamt_col, limit)
+    # view_df_as_html(df)
     df['word'] = df['word'].apply(lambda x: x.replace('\n', '\\n'))
-    df.to_csv('interamt_vocab.csv', quoting=csv.QUOTE_ALL, index=False)
-    '''
-
+    df.to_csv('public_vocab.csv', quoting=csv.QUOTE_ALL, index=False)
+    
     # BA
-    df = db_preprocessor(ba_col, limit)
-    view_df_as_html(df)
+    print(bcolors.OKBLUE + "BA preprocessing started..." + bcolors.ENDC)
+    df = ba_preprocessor(ba_col, limit)
+    # view_df_as_html(df)
+    df['word'] = df['word'].apply(lambda x: x.replace('\n', '\\n'))
+    df.to_csv('private_vocab.csv', quoting=csv.QUOTE_ALL, index=False)
 
+    '''
     # For testing purposes
-    # df_lemma_nona = df.dropna()
-    # result = frequency_by_one_column(df_lemma_nona, 'lemma')
-    # result = frequency_by_columns(df_lemma_nona, 'lemma', 'tag')
+    df_lemma_nona = df.dropna()
+    result = frequency_by_one_column(df_lemma_nona, 'lemma')
+    result = frequency_by_columns(df_lemma_nona, 'lemma', 'tag')
+    '''

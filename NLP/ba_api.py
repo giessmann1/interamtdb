@@ -40,18 +40,6 @@ def search_by_company(jwt, what):
     return response.json()
 
 
-def remove_false_positives(ba_col):
-    '''
-    '''
-    industry = get_one_column(ba_col, 'branchengruppe')
-    df = pd.DataFrame(industry)
-    df = frequency_by_one_column(df, 'branchengruppe')
-    view_df_as_html(df)
-
-
-
-
-
 if __name__ == '__main__':
     try:
         db = mongo_authenticate('../')
@@ -67,10 +55,6 @@ if __name__ == '__main__':
         db.create_collection(name=col_name)
 
     col = db[col_name]
-
-    # Remove false positives
-    remove_false_positives(col)
-    exit(0)
 
     # Load list of private companies
     with open('company_list_cleansed.csv', newline='') as f:

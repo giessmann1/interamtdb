@@ -31,7 +31,7 @@ sh startdb.sh
 Manual (one-time) start:
 ```bash
 # Make sure venv is activated and db is up running
-python3 interamt-scraper.py
+python3 interamt_scraper.py
 ```
 
 For automated start with crontab, see scraper-starter.sh

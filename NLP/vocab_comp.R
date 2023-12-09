@@ -1,1 +1,2 @@
-data1 <- read.csv("interamt_vocab.csv", header = TRUE, na.strings = c(" "))
+setwd("~/interamtdb/NLP")
+data1 <- read.csv("private_vocab.csv", header = TRUE, na.strings = c(""))

@@ -12,5 +12,5 @@ fi
 # If you use Python Virtual Environment
 source venv/bin/activate
 echo $(date +'%Y-%m-%d') | tr "\n" " " >> $filename
-python3 interamt-scraper.py >> $filename
+python3 interamt_scraper.py >> $filename
 deactivate

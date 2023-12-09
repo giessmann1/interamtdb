@@ -1,6 +1,6 @@
 import sys
 sys.path.append('..')
-from preprocessor import view_df_as_html, frequency_by_columns
+from helper import view_df_as_html, frequency_by_columns, frequency_by_one_column
 from nltk.corpus import stopwords
 import pandas as pd
 from database_wrapper import *
@@ -72,6 +72,7 @@ REGEX_KREIS_BEZIRK = [
     r"\bkreispolizeibehörde\b",
     r"\blandkreistag\b",
     r"\bba\b",
+    r"\bsaarpfalzkreis\b",
 ]
 
 REGEX_STADT_GEMEINDE = [
@@ -301,7 +302,7 @@ REGEX_SCIENCE = [
     r"\bakademie\b",
     r"\bwissenschaftszentrum\b",
     r"\bipk\b",
-    r"\blmu|tu|tum|rwth|kit\b",
+    r"\blmu\b|\btu\b|\btum\b|\brwth\b|\bkit\b",
 ]
 
 
@@ -317,7 +318,7 @@ def nonprofit_tagger(text):
     '''
     This regex-based tagger is designed to tag nonprofit employers while minimizing the alpha error (false-positives).
     It matches with 27.58% employers in the Interamt dataset.
-    It matches with 12.07% employers in the BA dataset.
+    It matches with 5.36% employers in the BA dataset.
     '''
     tags = []
     # Kirche
@@ -328,7 +329,7 @@ def nonprofit_tagger(text):
         tags.append('SCIENCE')
     # Undefined
     if check_regex_list(REGEX_NONPROFIT, text):
-        tags.append('UNDEFINED_NONPRODIT')
+        tags.append('UNDEFINED_NONPROFIT')
     # return tags
     return tags
 
@@ -382,33 +383,47 @@ def find_tags(employer_name, method_to_run):
 
     return flatten(tags)
 
+def find_tags_two_methods(employer_name, method1, method2):
+    # Cleansing
+    employer_name = re.sub(r"[\(,\)]", ' ', employer_name)
+    employer_name = re.sub(r"[^a-zA-ZäÄüÜöÖß ]", '', employer_name)
+    employer_name_sep = employer_name.lower().split(' ')
+    employer_name_sep = [
+        item for item in employer_name_sep if item not in custom_stopwords]
+    employer_name_sep = dropNA_for_lists(employer_name_sep)
+    tags_first = flatten([method1(item) for item in employer_name_sep])
+    tags_second = flatten([method2(item) for item in employer_name_sep])
+    tags_first.extend(tags_second)
+    return tags_first
+
 
 def _test_method(df, column, tagger):
+    df = frequency_by_one_column(df, column)
     df['Tags'] = df.apply(lambda row: ' '.join(
         find_tags(str(row[column]), tagger)), axis=1)
-    df = frequency_by_columns(df, column, 'Tags')
     sum_employers = len(df.index)
     df = df.replace(r'^\s*$', pd.NA, regex=True)
     df = df.dropna()
     sum_found = len(df.index)
 
     print(f"{sum_found} of {sum_employers} ({round(sum_found / sum_employers * 100,2)}%) could be tagged.")
+    return sum_found
 
 def _get_non_matchers(df, column, tagger):
+    df = frequency_by_one_column(df, column)
     df['Tags'] = df.apply(lambda row: ' '.join(
         find_tags(str(row[column]), tagger)), axis=1)
-    df = frequency_by_columns(df, column, 'Tags')
     df = df.replace(r'^\s*$', pd.NA, regex=True)
     df = df[df['Tags'].isna()]
-    view_df_as_html(df)
+    return df
 
 def _get_matchers(df, column, tagger):
+    df = frequency_by_one_column(df, column)
     df['Tags'] = df.apply(lambda row: ' '.join(
         find_tags(str(row[column]), tagger)), axis=1)
-    df = frequency_by_columns(df, column, 'Tags')
     df = df.replace(r'^\s*$', pd.NA, regex=True)
     df = df.dropna()
-    view_df_as_html(df)
+    return df
 
 
 if __name__ == '__main__':
@@ -424,12 +439,14 @@ if __name__ == '__main__':
     col = db['jobads']
 
     # Tagging der Datasets
-    employers = get_one_column(col, 'Behörde')
+    employers = get_one_column(col, 'Behörde', 100)
     df = pd.DataFrame(employers)
-    _test_method(df, 'Behörde', public_tagger)
+    view_df_as_html(_get_non_matchers(df, 'Behörde', public_tagger))
 
+    '''
     # Branchenspezifisches Tagging testen, um weiter zu verfeinern
     employers = get_one_column_filter(col, 'arbeitgeber', 'branchengruppe', 'Wissenschaft, Forschung, Entwicklung')
     df = pd.DataFrame(employers)
     _test_method(df, 'arbeitgeber', nonprofit_tagger)
     _get_non_matchers(df, 'arbeitgeber', nonprofit_tagger)
+    '''
