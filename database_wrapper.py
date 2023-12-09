@@ -42,6 +42,11 @@ def insert_one_in_collection(col, doc):
 def insert_many_in_collection(col, list_of_docs):
     col.insert_many(list_of_docs)
 
+# Returns one column with a filter
+def get_one_column_filter(col, column_get, column_filter, filter, limit=None):
+    query = {column_filter: filter}
+    projection = {column_get: 1, "_id": 0} 
+    return list(col.find(query, projection)) if limit is None else list(col.find(query, projection, limit=limit))
 
 # Run the module directly to check if connection works
 if __name__ == '__main__':

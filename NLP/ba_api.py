@@ -42,11 +42,6 @@ def search_by_company(jwt, what):
 
 def remove_false_positives(ba_col):
     '''
-    
-    Öffentlicher Dienst, Organisationen
-    Bildung, Erziehung, Unterricht
-    Wissenschaft, Forschung, Entwicklung
-    Logistik, Transport, Verkehr
     '''
     industry = get_one_column(ba_col, 'branchengruppe')
     df = pd.DataFrame(industry)

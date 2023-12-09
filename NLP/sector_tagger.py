@@ -10,7 +10,7 @@ custom_stopwords = stopwords.words('german') + ['bzw', 'sowie', 'ca', 'ggf', 'ab
                                                 'incl', 'ggfs', 'z.b', 'je', 'inkl', 'u.a', 'o.g', 'zt', 'z.zt', 'usw', 'etwa', 'd.h']
 
 REGEX_BUND = [
-    r"\bbundes(?:beauftragt|rat|(?:verwaltungs|patent)gericht|bau|ministerium|tag|forschungsinstitut|institut|bank|archiv|(?:netz)?agentur|nachrichtendienst|eisenbahnvermögen|post|polizei(?:akademie)?|zentrale|finanzhof)+(?:e|er|es|s)?\b",
+    r"\bbundes(?:beauftragt|rat|(?:verwaltungs|patent)gericht|bau|ministerium|tag|forschungsinstitut|institut|bank|archiv|(?:netz)?agentur|nachrichtendienst|eisenbahnvermögen|post|polizei(?:akademie)?|zentrale|finanzhof|polizeipräsidium)+(?:e|er|es|s)?\b",
     r"\bbundes(?:verwaltung|verwaltugs|kriminal|kartell|aufsicht|sorten|zentral|präsedial|präsendial|präsidial|kanzler)?s?(?:amt){1}\b",
     r"\b(?:umwelt|eisenbahn|fernstraßen|(?:luft|kraft)fahrt)+bundesamt\b",
     r"\bbundes?(?:anstalt|agentur)?\b",
@@ -27,6 +27,7 @@ REGEX_BUND = [
     r"\bthüneninstitut\b",
     r"\bkochinstitut\b",
     r"\bbundespolizeiaus\b",
+    r"\bgdws\b",
 ]
 
 REGEX_LAND = [
@@ -56,6 +57,8 @@ REGEX_LAND = [
     r"\blda\b", # Landesdatenschutz
     r"\brzvk\b", # Ruhegehalts- und Zusatzversorgungskasse des Saarlandes
     r"\bglücksspielbehörde\b",
+    r"\bsenatsverw\b",
+    r"\bsenjustv\b",
 ]
 
 REGEX_KREIS_BEZIRK = [
@@ -68,6 +71,7 @@ REGEX_KREIS_BEZIRK = [
     r"\blandes(?:hauptstadt|hauptstaddt)+\b", # typo
     r"\bkreispolizeibehörde\b",
     r"\blandkreistag\b",
+    r"\bba\b",
 ]
 
 REGEX_STADT_GEMEINDE = [
@@ -109,10 +113,11 @@ REGEX_STADT_GEMEINDE = [
     r"\bverwaltungsschulverband\b",
     r"\bgemeindeunfallversicherungsverband\b",
     r"\bsis\b",
+    r"\bgemeindeverwaltungsverband\b",
 ]
 
 REGEX_PUBLIC_UNDEFINED = [
-    r"\b(?:finanz|bau|forst|kultur|polizeiverwaltung|beschaffung|veterinäruntersuchung|marken|verwaltung|gesundheit|haupt|wasserstraßenneubau|rechnungsprüfung|information|ausländer|organisation|bürger|verbraucherschutz|bauaufsicht|straßenbau|bauordnung|oberberg|gartenbau|biosphärenreservat|gewerbeaufsicht|umweltschutz|schul|wasserwirtschaft|nationalpark)?s?amt\b",
+    r"\b(?:finanz|bau|forst|kultur|polizeiverwaltung|beschaffung|veterinäruntersuchung|marken|verwaltung|gesundheit|haupt|wasserstraßenneubau|rechnungsprüfung|information|ausländer|organisation|bürger|verbraucherschutz|bauaufsicht|straßenbau|bauordnung|oberberg|gartenbau|biosphärenreservat|gewerbeaufsicht|umweltschutz|schul|wasserwirtschaft|nationalpark|schifffahrts)?s?amt\b",
     r"\b(?:abfallzweck|entsorgung|verwaltung)?s?(?:zweck)?verband\b",
     r"\bminister(?:iums?|ial)+(?:beauftragt(?:en|er|e)+)?\b",
     r"\bbezügestellen?\b",
@@ -191,7 +196,7 @@ REGEX_NONPROFIT = [
     r"\b(?:berufs)?genossenschaft\b",
     r"\bsozialversicherung\b",
     r"\bverbraucherzentrale\b",
-    r".*stiftung",
+    r".*stiftung$",
     r"\bkrankenversicherung\b", # PKV kritisch
     r"\bkassenärztliche?\b",
     r"\b(?:studierenden|studenten)+werk\b",
@@ -202,11 +207,11 @@ REGEX_NONPROFIT = [
     r"\bkreishandwerkerschaft\b",
     r"\b(?:sozial|versorgung)+s?verband\b",
     r"\bstaatstheater\b",
-    r".*bibliothek",
+    r".*bibliothek$",
     r"\bggmbh\b",
     r"\bversorgungsausgleichskasse\b",
     r"\bhandelskammer\b",
-    r".*museum",
+    r".*museum$",
     r"\b(?:bundes|landes)?ärztekammer\b",
     r"\bkindertagesstätten?\b",
     r"\bnerufsakademien?\b",
@@ -227,10 +232,17 @@ REGEX_NONPROFIT = [
     r"\b(?:kindergarten|schul)+zweckverband\b",
     r"\bkassenzahnärztliche?\b",
     r"\bbildungsstätte\b",
-    r".*sammlung",
+    r".*sammlung$",
     r".*verein$",
     r"\bpsychotherapeutenkammer\b",
-    r".*verband",
+    r".*verband$",
+    r"\bbürgerhilfe\b",
+    r"\bgiz\b",
+    r"\bgesundheitskasse\b",
+    r"\bschulen?\b",
+    r"\bkita\b",
+    r"\bgemeinnützige?\b",
+    r"\bjugendhilfe\b",
 ]
 
 REGEX_CHURCH = [
@@ -255,18 +267,21 @@ REGEX_CHURCH = [
     r"\bneukirchener\b",
     r"\b(?:gesamt)?kirchengemeinde\b",
     r"\bkirchenkreis\b",
+    r"\bevluth\b",
+    r"\bkath\b",
 ]
 
 REGEX_SCIENCE = [
-    r".*universität",
-    r"\b(?:fach)*hochschule\b",
+    r".*universität$",
+    r"\b(?:fach)*hochschule$\b",
     r"\bfh\b",
-    r"universitäts.*",
+    r"\buniversitätsklinikum\b",
+    r"\buniversität\b"
     r"\buniversity\b",
-    r".*hochschule",
+    r".*hochschule$",
     r"\bhaw\b",
     # r"\bgesellschaft\b",
-    r".*helmholtzzentrum",
+    r".*helmholtzzentrum$",
     r"\bforschungsgemeinschaft\b",
     r"\bforschungszentrum\b",
     r"\bhelmholtz\b",
@@ -286,6 +301,7 @@ REGEX_SCIENCE = [
     r"\bakademie\b",
     r"\bwissenschaftszentrum\b",
     r"\bipk\b",
+    r"\blmu|tu|tum|rwth|kit\b",
 ]
 
 
@@ -299,7 +315,9 @@ def check_regex_list(regex_list, text):
 
 def nonprofit_tagger(text):
     '''
-    This tagger should tag nonprofit employers.
+    This regex-based tagger is designed to tag nonprofit employers while minimizing the alpha error (false-positives).
+    It matches with 27.58% employers in the Interamt dataset.
+    It matches with 12.07% employers in the BA dataset.
     '''
     tags = []
     # Kirche
@@ -314,11 +332,11 @@ def nonprofit_tagger(text):
     # return tags
     return tags
 
-
 def public_tagger(text):
     '''
-    This regex-based tagger is designed to minimize the alpha error (false-positives).
-    It matches with 73.88% employers in the Interamt dataset.
+    This regex-based tagger is designed to tag public employers while minimizing the alpha error (false-positives).
+    It matches with 78.99% employers in the Interamt dataset.
+    It matches with 2.42% employers in the BA dataset.
     '''
     tags = []
     # Bund
@@ -365,9 +383,7 @@ def find_tags(employer_name, method_to_run):
     return flatten(tags)
 
 
-def test_method(col, column, tagger):
-    employers = get_one_column(col, column)
-    df = pd.DataFrame(employers)
+def _test_method(df, column, tagger):
     df['Tags'] = df.apply(lambda row: ' '.join(
         find_tags(str(row[column]), tagger)), axis=1)
     df = frequency_by_columns(df, column, 'Tags')
@@ -378,9 +394,7 @@ def test_method(col, column, tagger):
 
     print(f"{sum_found} of {sum_employers} ({round(sum_found / sum_employers * 100,2)}%) could be tagged.")
 
-def _get_non_matchers(col, column, tagger):
-    employers = get_one_column(col, column)
-    df = pd.DataFrame(employers)
+def _get_non_matchers(df, column, tagger):
     df['Tags'] = df.apply(lambda row: ' '.join(
         find_tags(str(row[column]), tagger)), axis=1)
     df = frequency_by_columns(df, column, 'Tags')
@@ -388,9 +402,7 @@ def _get_non_matchers(col, column, tagger):
     df = df[df['Tags'].isna()]
     view_df_as_html(df)
 
-def _get_matchers(col, column, tagger):
-    employers = get_one_column(col, column)
-    df = pd.DataFrame(employers)
+def _get_matchers(df, column, tagger):
     df['Tags'] = df.apply(lambda row: ' '.join(
         find_tags(str(row[column]), tagger)), axis=1)
     df = frequency_by_columns(df, column, 'Tags')
@@ -409,8 +421,15 @@ if __name__ == '__main__':
         print(e)
         exit(1)
 
-    col = db['privateads']
+    col = db['jobads']
+
+    # Tagging der Datasets
+    employers = get_one_column(col, 'Behörde')
+    df = pd.DataFrame(employers)
+    _test_method(df, 'Behörde', public_tagger)
 
     # Branchenspezifisches Tagging testen, um weiter zu verfeinern
-    employers = get_all_collection_docs(col, column)
+    employers = get_one_column_filter(col, 'arbeitgeber', 'branchengruppe', 'Wissenschaft, Forschung, Entwicklung')
     df = pd.DataFrame(employers)
+    _test_method(df, 'arbeitgeber', nonprofit_tagger)
+    _get_non_matchers(df, 'arbeitgeber', nonprofit_tagger)
