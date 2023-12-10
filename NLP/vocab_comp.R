@@ -36,5 +36,11 @@ private_words <- private_words %>%
 joined_words <- full_join(public_words, private_words,by = c('lemma', 'tag'), suffix = c("_public", "_private"))
 
 joined_words <- joined_words %>%
+  drop_na() %>%
   mutate(log_ratio = log(tf_idf_sum_public / tf_idf_sum_private))
 
+library(ggplot2)
+library(hrbrthemes)
+
+ggplot(joined_words, aes(x=log_ratio)) +
+  geom_histogram(binwidth=0.5, fill="#69b3a2", color="#e9ecef", alpha=0.9)

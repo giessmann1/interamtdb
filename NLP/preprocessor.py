@@ -16,7 +16,7 @@ import csv
 
 nltk.download('stopwords', quiet=True)
 nltk.download('punkt', quiet=True)
-custom_stopwords = stopwords.words('german') + ['bzw', 'sowie', 'ca', 'ggf', 'ab', 'incl', 'ggfs', 'z.b', 'je', 'inkl', 'u.a', 'o.g', 'zt', 'z.zt', 'usw', 'etwa', 'd.h', 'i.v.m', 'ff']
+custom_stopwords = stopwords.words('german') + ['bzw', 'sowie', 'ca', 'ggf', 'ab', 'incl', 'ggfs', 'z.b', 'je', 'inkl', 'u.a', 'o.g', 'zt', 'z.zt', 'usw', 'etwa', 'd.h', 'i.v.m', 'ff', 'zzgl']
 nlp = spacy.load('de_core_news_md', disable=['parser', 'ner'])
 tagger = ht.HanoverTagger('morphmodel_ger.pgz')
 pd.set_option('display.max_seq_items', None)
@@ -50,13 +50,14 @@ REGEX_TO_FILTER = [
 
     # Gender suffixes
     r"\*innen",
-    r"\*innen",
+    r"\-innen",
     r"[\*:\_](in|innen|n|m|r)\s*",
     r"\/(-r|-mann|r)\s*",
 
     r"\*zze",
     r"\*nja",
     r"\*nja",
+    r"\*"
 
     r"\"",
     r"^\„",
@@ -102,26 +103,33 @@ REGEX_ROMAN = r"^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$"
 def process_word(lemma, tag):
     # Return a list with (processed_word, tag)
 
-    # Check if regex to filter --> NA, NOTEXT
-    for p in REGEX_TO_FILTER:
-        matches = re.findall(p, lemma.lower())
-        if len(matches) != 0:
-            return (pd.NA, 'NOTEXT')
+    lemma = lemma.lower()
 
-    # Check if only one character
+    # Newlines
+    if len(re.findall(r"\n", lemma)) != 0:
+        return (pd.NA, 'NEWLINE')
+
+    if len(re.findall(r"\t", lemma)) != 0:
+        return (pd.NA, 'TAB')
+
+     # Check if only one character
     if len(lemma) <= 1:
         return (pd.NA, 'SINGLECHAR')
 
-    # Check if webpage, email or number
-    for p in REGEX_WEBSITES:
-        matches = re.findall(p, lemma.lower())
-        if len(matches) != 0:
-            return (pd.NA, 'WEBSITE')
+     # Check if hashtag
+    if len(re.findall(r"#", lemma)) != 0:
+        return (pd.NA, 'HASHTAG')
 
     for p in REGEX_EMAIL:
         matches = re.findall(p, lemma)
         if len(matches) != 0:
             return (pd.NA, 'EMAIL')
+
+    # Check if webpage, email or number
+    for p in REGEX_WEBSITES:
+        matches = re.findall(p, lemma)
+        if len(matches) != 0:
+            return (pd.NA, 'WEBSITE')
 
     matches = re.findall(r"[0-9]+", lemma)
     if len(matches) != 0:
@@ -132,12 +140,13 @@ def process_word(lemma, tag):
         return (pd.NA, 'ROMAN')
 
     # Check if stopword
-    if lemma.lower() in custom_stopwords:
+    if lemma in custom_stopwords:
         return (pd.NA, 'STOPWORD')
 
     # Default
-    lemma = lemma.lower()
-    # lemma = re.sub(r"[^a-zA-ZäÄöÖüÜß]", '', lemma)
+    matches = re.findall(r"[^a-zA-ZäÄöÖüÜß-]", lemma) # Problem with -innen / -in
+    if len(matches) != 0:
+        return (pd.NA, 'NOTEXT')
 
     return (lemma, tag)
 
@@ -154,6 +163,8 @@ def extract_regex_matches(strings, regex_patterns):
     result = []
     for s in strings:
         s = re.sub('\xa0', ' ', s)  # Replace '\xa0' characters
+        s = re.sub('\xad', ' ', s)  # Replace '\xad' characters
+        s = re.sub('\x09', r'\t', s)
         s = re.sub('…', '...', s)  # Replace U+2026 characters
         s = re.sub('–', '-', s)  # Replace english version
         for pattern in regex_patterns:
@@ -327,20 +338,20 @@ if __name__ == '__main__':
 
     limit = None if len(sys.argv) == 1 else int(sys.argv[1])
     
-    '''
     # Interamt
     print(bcolors.OKBLUE + "Interamt preprocessing started..." + bcolors.ENDC)
     df = interamt_preprocessor(interamt_col, limit)
     # view_df_as_html(df)
     df['word'] = df['word'].apply(lambda x: x.replace('\n', '\\n'))
+    df['word'] = df['word'].apply(lambda x: x.replace('\t', '\\t'))
     df.to_csv('public_vocab.csv', quoting=csv.QUOTE_ALL, index=False)
-    '''
     
     # BA
     print(bcolors.OKBLUE + "BA preprocessing started..." + bcolors.ENDC)
     df = ba_preprocessor(ba_col, limit)
     # view_df_as_html(df)
     df['word'] = df['word'].apply(lambda x: x.replace('\n', '\\n'))
+    df['word'] = df['word'].apply(lambda x: x.replace('\t', '\\t'))
     df.to_csv('private_vocab.csv', quoting=csv.QUOTE_ALL, index=False)
 
     '''
