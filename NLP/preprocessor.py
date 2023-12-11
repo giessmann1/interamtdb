@@ -144,7 +144,7 @@ def process_word(lemma, tag):
         return (pd.NA, 'STOPWORD')
 
     # Default
-    matches = re.findall(r"[^a-zA-ZäÄöÖüÜß-]", lemma) # Problem with -innen / -in
+    matches = re.findall(r"[^a-zA-ZäÄöÖüÜß]", lemma) # Problem with -innen / -in
     if len(matches) != 0:
         return (pd.NA, 'NOTEXT')
 
