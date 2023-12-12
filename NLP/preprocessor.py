@@ -16,7 +16,7 @@ import csv
 
 nltk.download('stopwords', quiet=True)
 nltk.download('punkt', quiet=True)
-custom_stopwords = stopwords.words('german') + ['bzw', 'sowie', 'ca', 'ggf', 'ab', 'incl', 'ggfs', 'z.b', 'je', 'inkl', 'u.a', 'o.g', 'zt', 'z.zt', 'usw', 'etwa', 'd.h', 'i.v.m', 'ff', 'zzgl']
+custom_stopwords = stopwords.words('german') + ['bzw', 'sowie', 'ca', 'ggf', 'ab', 'incl', 'ggfs', 'z.b', 'je', 'inkl', 'u.a', 'o.g', 'zt', 'z.zt', 'usw', 'etwa', 'd.h', 'i.v.m', 'ff', 'zzgl', 'zzt', 'zz']
 nlp = spacy.load('de_core_news_md', disable=['parser', 'ner'])
 tagger = ht.HanoverTagger('morphmodel_ger.pgz')
 pd.set_option('display.max_seq_items', None)
