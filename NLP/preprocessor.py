@@ -112,11 +112,11 @@ def process_word(lemma, tag):
     if len(re.findall(r"\t", lemma)) != 0:
         return (pd.NA, 'TAB')
 
-     # Check if only one character
+    # Check if only one character
     if len(lemma) <= 1:
         return (pd.NA, 'SINGLECHAR')
 
-     # Check if hashtag
+    # Check if hashtag
     if len(re.findall(r"#", lemma)) != 0:
         return (pd.NA, 'HASHTAG')
 
@@ -147,6 +147,10 @@ def process_word(lemma, tag):
     matches = re.findall(r"[^a-zA-ZäÄöÖüÜß]", lemma) # Problem with -innen / -in
     if len(matches) != 0:
         return (pd.NA, 'NOTEXT')
+
+    # Lose letters
+    if tag == 'XY':
+         return (pd.NA, 'NOTEXT')
 
     return (lemma, tag)
 
@@ -181,6 +185,7 @@ def interamt_preprocessor(interamt_col, limit=None):
     list_of_filtered_dicts = [
         {key: d.get(key) for key in ['ID', 'Behörde', 'Stellenbeschreibung']} for d in list_of_dicts]
     df = pd.DataFrame(list_of_filtered_dicts)
+
     df = df.dropna() # Removes 'Stellenbeschreibung' when None --> eg. references to websites
     print("Dataframe loaded.")
 
@@ -191,12 +196,11 @@ def interamt_preprocessor(interamt_col, limit=None):
     employers_to_include = employers_to_include.replace(r'^\s*$', pd.NA, regex=True)
     employers_to_include = employers_to_include.dropna()
     sum_found = sum_employers - len(employers_to_include.index)
-    print(f"{sum_found} of {sum_employers} ({round(sum_found / sum_employers * 100,2)}%) are removed.")
-
     employers_to_include_list = employers_to_include['Behörde'].tolist()
     df = df[df['Behörde'].isin(employers_to_include_list)]
-    df = df.drop('Behörde', axis=1)
+    # df = df.drop('Behörde', axis=1)
     print("Non-public employers excluded.")
+    print(f"{sum_found} of {sum_employers} ({round(sum_found / sum_employers * 100,2)}%) are removed.")
 
     # Tokenize sentences
     df['sentence'] = df.apply(lambda row: sent_tokenize(
@@ -225,7 +229,7 @@ def interamt_preprocessor(interamt_col, limit=None):
     df = df.explode('word', ignore_index=True)
     df = pd.concat([df, pd.DataFrame(df['word'].values.tolist())], axis=1)
     df.drop('word', axis=1, inplace=True)
-    df.rename({df.columns[2]: 'word', df.columns[3]: 'lemma', df.columns[4]: 'tag'}, axis=1, inplace=True)  # Maybe not the cleanest solution
+    df.rename({df.columns[3]: 'word', df.columns[4]: 'lemma', df.columns[5]: 'tag'}, axis=1, inplace=True)  # Maybe not the cleanest solution
     print("Lemmatization done.")
 
     # Preprocessing
@@ -248,7 +252,7 @@ def replace_with_keys(job_ad_dict):
         if key == 'stellenbeschreibung':
             continue
         value = job_ad_dict[key]
-        if value == None:
+        if value in (None, ""):
             continue
         stellenbeschreibung = ireplace(
             value, '{' + key.replace(' ', '_') + '}', stellenbeschreibung)
@@ -271,18 +275,17 @@ def ba_preprocessor(ba_col, limit=None):
     employers_to_exclude = employers_to_exclude.replace(r'^\s*$', pd.NA, regex=True)
     employers_to_exclude = employers_to_exclude.dropna()
     sum_found = len(employers_to_exclude.index)
-    print(f"{sum_found} of {sum_employers} ({round(sum_found / sum_employers * 100,2)}%) are removed.")
-
     merged_df = df.merge(employers_to_exclude, on='arbeitgeber', how='left', indicator=True)
     df = merged_df[merged_df['_merge'] == 'left_only'].drop(columns=['_merge'])
     df = df.drop('Frequency', axis=1)
     df = df.drop('Tags', axis=1)
     print("Public and Non-profit employers excluded.")
+    print(f"{sum_found} of {sum_employers} ({round(sum_found / sum_employers * 100,2)}%) are removed.")
 
     # Replace key
     df['stellenbeschreibung'] = df.apply(lambda row: replace_with_keys(dict(row)), axis=1)
     print("Keys replaced.")
-    df = df[['refnr', 'stellenbeschreibung']]
+    df = df[['refnr', 'arbeitgeber', 'stellenbeschreibung']]
     df.rename({'refnr': 'ID'}, axis=1, inplace=True) # The same as interamt ads
 
     # Tokenize sentences
@@ -312,7 +315,7 @@ def ba_preprocessor(ba_col, limit=None):
     df = df.explode('word', ignore_index=True)
     df = pd.concat([df, pd.DataFrame(df['word'].values.tolist())], axis=1)
     df.drop('word', axis=1, inplace=True)
-    df.rename({df.columns[2]: 'word', df.columns[3]: 'lemma', df.columns[4]: 'tag'}, axis=1, inplace=True)  # Maybe not the cleanest solution
+    df.rename({df.columns[3]: 'word', df.columns[4]: 'lemma', df.columns[5]: 'tag'}, axis=1, inplace=True)  # Maybe not the cleanest solution
     print("Lemmatization done.")
 
     # Preprocessing
@@ -328,13 +331,13 @@ if __name__ == '__main__':
         db = mongo_authenticate('../')
         cols = db.list_collection_names()
         print('Connection working:', cols)
+        interamt_col = db['jobads']
+        ba_col = db['privateads']
     except Exception as e:
         print('Connection not working.')
-        print(e)
-        exit(1)
-
-    interamt_col = db['jobads']
-    ba_col = db['privateads']
+        interamt_col = RUN_OFFLINE("../public_ads_5000.csv")
+        ba_col = RUN_OFFLINE("../private_ads_5000.csv")
+        
 
     limit = None if len(sys.argv) == 1 else int(sys.argv[1])
     

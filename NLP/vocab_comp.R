@@ -4,13 +4,24 @@ library(tidyr)
 
 setwd("~/interamtdb/NLP")
 public_vocab <- read.csv("public_vocab.csv", header = TRUE, na.strings = c(""))
+
+length(unique(public_vocab$ID))
+
 private_vocab <- read.csv("private_vocab.csv", header = TRUE, na.strings = c(""))
+
+length(unique(private_vocab$ID))
 
 # Public vocab
 public_words <- public_vocab %>%
   drop_na() %>%
   mutate(tag = gsub("\\(.+\\)", "", tag)) %>%
-  count(lemma, tag, sort = TRUE)
+  count(lemma, tag, Behörde, name = "lemma_by_behörde") %>%
+  group_by(lemma, tag) %>%
+  summarize(
+    word_by_employers = n(),
+    n = sum(lemma_by_behörde)
+  )
+public_words$word_by_employers <- as.numeric(public_words$word_by_employers)
 public_words$n <- as.numeric(public_words$n)
 
 # public_total_words <- public_words %>% group_by(ID) %>% summarize(total = sum(n))
@@ -28,7 +39,13 @@ public_total_words <- as.numeric(sum(public_words$n))
 private_words <- private_vocab %>%
   drop_na() %>%
   mutate(tag = gsub("\\(.+\\)", "", tag)) %>%
-  count(lemma, tag, sort = TRUE)
+  count(lemma, tag, arbeitgeber, name = "lemma_by_arbeitgeber") %>%
+  group_by(lemma, tag) %>%
+  summarize(
+    word_by_employers = n(),
+    n = sum(lemma_by_arbeitgeber)
+  )
+private_words$word_by_employers <- as.numeric(private_words$word_by_employers)
 private_words$n <- as.numeric(private_words$n)
 
 # private_total_words <- private_words %>% group_by(ID) %>% summarize(total = sum(n))
@@ -44,6 +61,18 @@ private_total_words <- as.numeric(sum(private_words$n))
 
 # Join words
 joined_words <- full_join(public_words, private_words,by = c('lemma', 'tag'), suffix = c("_public", "_private"))
+joined_words[is.na(joined_words)] <- 0
+joined_words$combined_word_by_employer = joined_words$word_by_employers_public + joined_words$word_by_employers_private
+joined_words <- subset(joined_words, combined_word_by_employer > 2) 
+
+library(ggplot2)
+
+ggplot(joined_words, aes(x = combined_word_by_employer)) +
+  geom_histogram(binwidth=2, fill="#69b3a2", color="white", alpha=0.9) +
+  scale_y_log10() +
+  theme_light() +
+  xlab("Employers using a word nth times") +
+  ylab("Frequency (log scale)")
 
 ## Calc helping variables
 joined_words$O_public <- joined_words$n_public/public_total_words
@@ -72,7 +101,6 @@ wordcloud(words = PPDs_private_exlusive_adj$lemma, freq = abs(PPDs_private_exlus
 # Log ratio
 
 joined_words <- joined_words %>%
-  drop_na() %>%
   mutate(over_underuse = ifelse(O_public > O_private, 1, -1)) %>%
   mutate(E_public = public_total_words * (n_public + n_private)/(public_total_words + private_total_words)) %>%
   mutate(E_private = private_total_words * (n_public + n_private)/(public_total_words + private_total_words)) %>%
@@ -82,8 +110,6 @@ joined_words <- joined_words %>%
 lower_quantil <- quantile(joined_words$Log_ratio, 0.10)
 upper_quantil <- quantile(joined_words$Log_ratio, 0.90)
 mean <- mean(joined_words$Log_ratio)
-
-library(ggplot2)
 
 ggplot(joined_words, aes(x = Log_ratio)) +
   geom_histogram(binwidth=0.5, fill="#69b3a2", color="white", alpha=0.9) +
