@@ -150,7 +150,7 @@ def process_word(lemma, tag):
 
     # Lose letters
     if tag == 'XY':
-         return (pd.NA, 'NOTEXT')
+        return (pd.NA, 'NOTEXT')
 
     return (lemma, tag)
 
@@ -185,7 +185,7 @@ def interamt_preprocessor(interamt_col, limit=None):
     list_of_filtered_dicts = [
         {key: d.get(key) for key in ['ID', 'Behörde', 'Stellenbeschreibung']} for d in list_of_dicts]
     df = pd.DataFrame(list_of_filtered_dicts)
-
+    df['Stellenbeschreibung'] = df['Stellenbeschreibung'].replace('', pd.NA)
     df = df.dropna() # Removes 'Stellenbeschreibung' when None --> eg. references to websites
     print("Dataframe loaded.")
 
@@ -264,8 +264,9 @@ def ba_preprocessor(ba_col, limit=None):
     list_of_dicts = get_all_collection_docs(ba_col, limit)
     list_of_filtered_dicts = [
         {key: d.get(key) for key in ['refnr', 'aktuelleVeroeffentlichungsdatum', 'arbeitgeber', 'branche', 'eintrittsdatum', 'titel', 'beruf', 'stellenbeschreibung', 'tarifvertrag', 'tarifvertrag', 'externeUrl']} for d in list_of_dicts]
-
     df = pd.DataFrame(list_of_filtered_dicts)
+    df['stellenbeschreibung'] = df['stellenbeschreibung'].replace('', pd.NA)
+    df = df.dropna() # Removes 'stellenbeschreibung' when None --> eg. references to websites
     print("Dataframe loaded.")
 
     # Remove public and non-profit employers
