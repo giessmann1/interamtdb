@@ -22,12 +22,16 @@ library(ggrepel)
 library(ggalt)
 library(data.table)
 
+library(topicmodels)
+library(NLP)
+library(tm)
+
 # --------------------------------- Settings --------------------------------- #
 setwd("~/interamtdb/NLP")
 options(scipen = 10000)
 
 # --------------------------------- Constants -------------------------------- #
-SAMPLE_SIZE <- 5000
+SAMPLE_SIZE <- 200
 WORDS_BY_EMPLOYER_MIN <- 1
 PUBLIC_VOCAB_FILE <- "public_vocab.csv"
 PRIVATE_VOCAB_FILE <- "private_vocab.csv"
@@ -58,6 +62,7 @@ get_cleansed_vocab <- function(vocab, employer_column) {
   
   return(vocab)
 }
+
 
 # ------------------------ Load datasets and sampling ------------------------ #
 # Public
@@ -108,6 +113,41 @@ rbind(temp_public, temp_private) %>%
 
 # ---------------------------- Corpora generation ---------------------------- #
 # Public
+
+###### LDA Topic Modeling with Gibbs algorithm (topicmodels package)
+dtm <- public_vocab_cleansed %>%
+  group_by(ID, lemma) %>%
+  summarize(
+    count = n(),
+    tfidf = as.integer(count * idf * 1000)
+  ) %>%
+  unique() %>% # I can do this better!
+  cast_dtm(ID, lemma, tfidf)
+
+ap_lda <- LDA(dtm, k = 17, control = list(seed = 1234)) # Change k when stm approach is conducted
+ap_topics <- tidy(ap_lda, matrix = "beta")
+
+ap_top_terms <- ap_topics %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 10) %>% 
+  ungroup() %>%
+  arrange(topic, -beta)
+
+ap_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered()
+
+### LDA Topic modeling with VEM algorithm,
+# but with searchK option (stm package)
+# FREX weighting
+# gamma values
+# topicCorr
+
+
+####### ETM with word embeddings
 w2v <- word2vec(x = public_ads$lemma, dim = 25, type = "skip-gram", iter = 10, min_count = 5, threads = 2)
 embeddings <- as.matrix(w2v)
 
@@ -153,7 +193,7 @@ df           <- df[, weight := ifelse(is.na(beta), 0.8, beta / max(beta, na.rm =
 textplot_embedding_2d(df, title = "ETM topics", subtitle = "embedded in 2D using UMAP", encircle = FALSE, points = FALSE)
 textplot_embedding_2d(df, title = "ETM topics", subtitle = "embedded in 2D using UMAP", encircle = TRUE, points = TRUE)
 
-
+##### STM with categorical covariate 'sector'
 
 
 
