@@ -1,104 +1,167 @@
+# ---------------------------------------------------------------------------- #
+#           Vocabulary comparsion between public and private job ads           #
+#                                                                              #
+#                     (c) Nico Gießmann, MA thesis, 2023-24                    #
+# ---------------------------------------------------------------------------- #
+
+# ---------------------------------- Imports --------------------------------- #
 library(dplyr)
 library(tidytext)
 library(tidyr)
+library(ggplot2)
+library(RColorBrewer)
+library(wordcloud)
 
+library(torch)
+library(topicmodels.etm)
+library(word2vec)
+library(udpipe)
+library(textplot)
+library(uwot)
+library(ggrepel)
+library(ggalt)
+library(data.table)
+
+# --------------------------------- Settings --------------------------------- #
 setwd("~/interamtdb/NLP")
-public_vocab <- read.csv("public_vocab.csv", header = TRUE, na.strings = c(""))
+options(scipen = 10000)
 
-length(unique(public_vocab$ID))
+# --------------------------------- Constants -------------------------------- #
+SAMPLE_SIZE <- 5000
+WORDS_BY_EMPLOYER_MIN <- 1
+PUBLIC_VOCAB_FILE <- "public_vocab.csv"
+PRIVATE_VOCAB_FILE <- "private_vocab.csv"
 
-private_vocab <- read.csv("private_vocab.csv", header = TRUE, na.strings = c(""))
+# --------------------------------- Functions -------------------------------- #
+sample_first_n_ids <- function(vocab) {
+  vocab <- na.omit(vocab)
+  unique_ids <- unique(vocab$ID)
+  sampled_ids <- unique_ids[1:SAMPLE_SIZE]
+  return(vocab[vocab$ID %in% sampled_ids, ])
+}
 
-length(unique(private_vocab$ID))
+get_cleansed_vocab <- function(vocab, employer_column) {
+  # Tag cleansing
+  vocab$tag <- gsub("\\(.+\\)", "", vocab$tag)
+  
+  # Group by 'lemma' and 'tag', then summarize
+  vocab <- vocab %>%
+    group_by(lemma, tag) %>%
+    mutate(
+      n = n(),
+      document_frequency = n_distinct(ID),
+      word_by_employers = n_distinct(.data[[employer_column]]), # Curly double braces doesn't work for me.
+      idf = log2(SAMPLE_SIZE / document_frequency)
+    ) %>%
+    filter(word_by_employers > WORDS_BY_EMPLOYER_MIN) %>%
+    select(-word_by_employers)
+  
+  return(vocab)
+}
 
-# Public vocab
-public_words <- public_vocab %>%
-  drop_na() %>%
-  mutate(tag = gsub("\\(.+\\)", "", tag)) %>%
-  count(lemma, tag, Behörde, name = "lemma_by_behörde") %>%
-  group_by(lemma, tag) %>%
-  summarize(
-    word_by_employers = n(),
-    n = sum(lemma_by_behörde)
-  )
-public_words$word_by_employers <- as.numeric(public_words$word_by_employers)
-public_words$n <- as.numeric(public_words$n)
+# ------------------------ Load datasets and sampling ------------------------ #
+# Public
+public_vocab <- read.csv(PUBLIC_VOCAB_FILE, na.strings=c(""))
+public_vocab_sample <- sample_first_n_ids(public_vocab)
+public_vocab_cleansed <- get_cleansed_vocab(public_vocab_sample, "Behörde")
 
-# public_total_words <- public_words %>% group_by(ID) %>% summarize(total = sum(n))
-public_total_words <- as.numeric(sum(public_words$n))
+public_ads <- public_vocab_cleansed[c("ID", "lemma")] %>%
+  group_by(ID) %>%
+  summarize(lemma = paste(lemma, collapse = ' '))
 
-# public_words <- public_words %>%
-#   left_join(public_total_words) %>%
-#   bind_tf_idf(lemma, ID, n) %>%
-#   group_by(lemma, tag) %>%
-#   summarise(tf_idf_sum = sum(tf_idf), n = sum(n))
+# Private
+private_vocab <- read.csv(PRIVATE_VOCAB_FILE, na.strings=c(""))
+private_vocab_sample <- sample_first_n_ids(private_vocab)
+private_vocab_cleansed <- get_cleansed_vocab(private_vocab_sample, "arbeitgeber")
 
-# public_words <- public_words[public_words$n >= 4, ]
+private_ads <- private_vocab_cleansed[c("ID", "lemma")] %>%
+  group_by(ID) %>%
+  summarize(lemma = paste(lemma, collapse = ' '))
 
-# Private vocab
-private_words <- private_vocab %>%
-  drop_na() %>%
-  mutate(tag = gsub("\\(.+\\)", "", tag)) %>%
-  count(lemma, tag, arbeitgeber, name = "lemma_by_arbeitgeber") %>%
-  group_by(lemma, tag) %>%
-  summarize(
-    word_by_employers = n(),
-    n = sum(lemma_by_arbeitgeber)
-  )
-private_words$word_by_employers <- as.numeric(private_words$word_by_employers)
-private_words$n <- as.numeric(private_words$n)
+# -------------------------------- Zipf's law -------------------------------- #
+# Public
+temp_public <- public_vocab_cleansed %>%
+  select(lemma, tag, document_frequency) %>%
+  unique() %>%
+  arrange(desc(document_frequency)) %>%
+  mutate(vocab = "Public") %>%
+  ungroup()
+temp_public$rank <- seq_len(nrow(temp_public))
+temp_public <- temp_public %>% select(rank, document_frequency, vocab)
 
-# private_total_words <- private_words %>% group_by(ID) %>% summarize(total = sum(n))
-private_total_words <- as.numeric(sum(private_words$n))
+# Private
+temp_private <- private_vocab_cleansed %>%
+  select(lemma, tag, document_frequency) %>%
+  unique() %>%
+  arrange(desc(document_frequency)) %>%
+  mutate(vocab = "Private") %>%
+  ungroup()
+temp_private$rank <- seq_len(nrow(temp_private))
+temp_private <- temp_private %>% select(rank, document_frequency, vocab)
 
-# private_words <- private_words %>%
-#   left_join(private_total_words) %>%
-#   bind_tf_idf(lemma, ID, n) %>%
-#   group_by(lemma, tag) %>%
-#   summarise(tf_idf_sum = sum(tf_idf), n = sum(n))
+# Plotting Zipf's law (see https://doi.org/10.3758/s13423-014-0585-6)
+rbind(temp_public, temp_private) %>%
+  ggplot(aes(rank, document_frequency, color = vocab)) +
+  geom_line(alpha = 0.8) + 
+  scale_x_log10() +
+  scale_y_log10()
 
-# private_words <- private_words[private_words$n >= 4, ]
+# ---------------------------- Corpora generation ---------------------------- #
+# Public
+w2v <- word2vec(x = public_ads$lemma, dim = 25, type = "skip-gram", iter = 10, min_count = 5, threads = 2)
+embeddings <- as.matrix(w2v)
 
-# Join words
+# predict(w2v, newdata = c("datenschutz"), type = "nearest", top_n = 5)
+
+dtm <- strsplit.data.frame(public_ads, group = "ID", term = "lemma", split = " ") # Easier
+dtm <- document_term_frequencies(dtm) # Easier
+dtm <- document_term_matrix(dtm)
+#dtm <- dtm_remove_tfidf(dtm, prob = 0.50)
+vocab <- intersect(rownames(embeddings), colnames(dtm))
+embeddings <- dtm_conform(embeddings, rows = vocab)
+dtm <- dtm_conform(dtm, columns = vocab)
+
+set.seed(1234)
+torch_manual_seed(4321)
+model <- ETM(k = 20, dim = 100, embeddings = embeddings)
+optimizer <- optim_adam(params = model$parameters, lr = 0.005, weight_decay = 0.0000012)
+loss <- model$fit(data = dtm, optimizer = optimizer, epoch = 20, batch_size = 1000)
+plot(model, type = "loss")
+
+terminology <- predict(model, type = "terms", top_n = 15)
+terminology
+terminology  <- rbindlist(terminology, idcol = "cluster")
+
+centers    <- as.matrix(model, type = "embedding", which = "topics")
+embeddings <- as.matrix(model, type = "embedding", which = "words")
+manifold   <- umap(embeddings, 
+                   n_components = 2, metric = "cosine", n_neighbors = 15, fast_sgd = TRUE, 
+                   n_threads = 2, ret_model = TRUE, verbose = TRUE)
+centers    <- umap_transform(X = centers, model = manifold)
+words      <- manifold$embedding
+
+
+df           <- list(words   = merge(x = terminology, 
+                                     y = data.frame(x = words[, 1], y = words[, 2], term = rownames(embeddings)), 
+                                     by = "term"), 
+                     centers = data.frame(x = centers[, 1], y = centers[, 2], 
+                                          term = paste("Topic-", seq_len(nrow(centers)), sep = ""), 
+                                          cluster = seq_len(nrow(centers))))
+df           <- rbindlist(df, use.names = TRUE, fill = TRUE, idcol = "type")
+df           <- df[, weight := ifelse(is.na(beta), 0.8, beta / max(beta, na.rm = TRUE)), by = list(cluster)]
+
+textplot_embedding_2d(df, title = "ETM topics", subtitle = "embedded in 2D using UMAP", encircle = FALSE, points = FALSE)
+textplot_embedding_2d(df, title = "ETM topics", subtitle = "embedded in 2D using UMAP", encircle = TRUE, points = TRUE)
+
+
+
+
+
+# Private
+
+# ---------------------------- Corpora comparison ---------------------------- #
 joined_words <- full_join(public_words, private_words,by = c('lemma', 'tag'), suffix = c("_public", "_private"))
 joined_words[is.na(joined_words)] <- 0
-joined_words$combined_word_by_employer = joined_words$word_by_employers_public + joined_words$word_by_employers_private
-joined_words <- subset(joined_words, combined_word_by_employer > 2) 
-
-library(ggplot2)
-
-ggplot(joined_words, aes(x = combined_word_by_employer)) +
-  geom_histogram(binwidth=2, fill="#69b3a2", color="white", alpha=0.9) +
-  scale_y_log10() +
-  theme_light() +
-  xlab("Employers using a word nth times") +
-  ylab("Frequency (log scale)")
-
-## Calc helping variables
-joined_words$O_public <- joined_words$n_public/public_total_words
-joined_words$O_private <- joined_words$n_private/private_total_words
-
-# Exclusives
-PPDs_exlusive <- joined_words[is.na(joined_words$n_private), ]
-PPDs_exlusive_adj <- PPDs_exlusive[grepl("ADJ", PPDs_exlusive$tag), ]
-PPDs_exlusive_adj <- PPDs_exlusive_adj[order(PPDs_exlusive_adj$O_public, decreasing = TRUE), ]
-
-PPDs_private_exlusive <- joined_words[is.na(joined_words$n_public), ]
-PPDs_private_exlusive_adj <- PPDs_private_exlusive[grepl("ADJ", PPDs_private_exlusive$tag), ]
-PPDs_private_exlusive_adj <- PPDs_private_exlusive_adj[order(PPDs_private_exlusive_adj$O_private, decreasing = TRUE), ]
-
-library(wordcloud)
-library(RColorBrewer)
-
-set.seed(1234)
-wordcloud(words = PPDs_exlusive_adj$lemma, freq = abs(PPDs_exlusive_adj$O_public)*1000, max.words=50,
-          random.order=FALSE, colors=brewer.pal(8, "Dark2"), rot.per=0, scale=c(2, 0.5))
-
-set.seed(1234)
-wordcloud(words = PPDs_private_exlusive_adj$lemma, freq = abs(PPDs_private_exlusive_adj$O_private)*1000, max.words=50,
-          random.order=FALSE, colors=brewer.pal(8, "Dark2"), rot.per=0, scale=c(1.4, 0.5))
-
-# Log ratio
 
 joined_words <- joined_words %>%
   mutate(over_underuse = ifelse(O_public > O_private, 1, -1)) %>%
