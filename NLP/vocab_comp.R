@@ -91,6 +91,35 @@ similarity_to_distance <- function(similarity_matrix) {
   return(distance_matrix)
 }
 
+get_dividers <- function(n, k) {
+  dividers <- seq(k, n, by = k)
+  if (dividers[length(dividers)] != n) {
+    dividers[length(dividers) + 1] <- n
+  }
+  return(dividers)
+}
+
+branches_per_height <- function(dend, k = 1) {
+  n <- get_branches_heights(dend, decreasing = TRUE)[1]
+  dividers <- get_dividers(n, k)
+  
+  branches <- c()
+  for (i in dividers) {
+    dendlist <- cut(dend, h = i)$lower
+    dendlist_l <- length(dendlist)
+  
+    branches <- append(branches, dendlist_l)
+  }
+  return(data.frame(x = dividers, y = branches))
+}
+
+normalizer <- function(v) {
+  min_value <- min(v)
+  max_value <- max(v)
+  v_n <- ((v - min_value) / (max_value - min_value))
+  return(v_n)
+}
+
 # ------------------------ Load datasets and sampling ------------------------ #
 # Public
 public_vocab <- read.csv(PUBLIC_VOCAB_FILE, na.strings=c(""))
@@ -138,17 +167,19 @@ rbind(temp_public, temp_private) %>%
   scale_x_log10() +
   scale_y_log10()
 
+rm(temp_public, temp_private)
+
 # Topic identification
 
 ## Generate Document-Term-Matrix (DTM)
 DTM_public <- public_vocab_cleansed %>%
   group_by(ID, lemma) %>%
-  summarize(
+  reframe(
     count = n(),
     tfidf = as.integer(count * idf * 1000)
   ) %>%
-  unique() %>% # I can do this better!
-  filter(percent_rank(tdidf) > 0.5) %>%
+  unique() %>%
+  filter(percent_rank(tfidf) > 0.5) %>%
   cast_dtm(ID, lemma, tfidf)
 
 ## Word embeddings
@@ -162,23 +193,26 @@ min_value <- min(similarity_matrix$similarity)
 max_value <- max(similarity_matrix$similarity)
 similarity_matrix$similarity <- (similarity_matrix$similarity - min_value) / (max_value - min_value)
 
-# Remove same terms with similarity 1
-# similarity_matrix <- similarity_matrix[similarity_matrix$term1 != similarity_matrix$term2, ]
-
-# Only include terms with high similarity to reduce complexity of dendogram
-# similarity_matrix <- similarity_matrix[similarity_matrix$similarity >= THRESHOLD_LOWER, ]
-
 # Pivot the dataframe into a square dissimilarity matrix
 similarity_matrix <- as.matrix(dcast(similarity_matrix, term1 ~ term2, value.var = "similarity"))
 rownames(similarity_matrix) <- similarity_matrix[, "term1"]
-similarity_matrix <-similarity_matrix[, colnames(similarity_matrix) != "term1"]
+similarity_matrix <- similarity_matrix[, colnames(similarity_matrix) != "term1"]
 
-hc <- similarity_matrix %>%
+dend <- similarity_matrix %>%
   similarity_to_distance() %>%
   dist() %>%
-  hclust()
+  hclust() %>%
+  as.dendrogram(hc)
 
-dend <- as.dendrogram(hc)
+bph <- branches_per_height(dend, k = 0.1)
+bph <- mutate(bph, agg = lag(y) - y)
+bph[1, ]$agg <- 0
+bph$cum_agg <- cumsum(bph$agg)
+bph$cum_agg_n <- normalizer(bph$cum_agg)
+
+ggplot(bph, aes(x=cum_agg_n, y=x)) +
+  geom_line()
+
 
 dendlist <- cut(dend, h = 8)
 
