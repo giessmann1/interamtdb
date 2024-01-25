@@ -19,8 +19,10 @@ library(udpipe)
 library(textplot)
 library(uwot)
 library(ggrepel)
+library(hrbrthemes)
 library(ggalt)
 library(data.table)
+library(stringr)
 
 library(topicmodels)
 library(NLP)
@@ -36,6 +38,7 @@ library(colormap)
 library(ape)
 library(circlize)
 library(ggdendro)
+library(stringdist)
 
 # --------------------------------- Settings --------------------------------- #
 setwd("~/interamtdb/NLP")
@@ -46,7 +49,9 @@ SAMPLE_SIZE <- 200
 WORDS_BY_EMPLOYER_MIN <- 1
 PUBLIC_VOCAB_FILE <- "public_vocab.csv"
 PRIVATE_VOCAB_FILE <- "private_vocab.csv"
-THRESHOLD_LOWER <- 0.7
+MIN_WORDS <- 4 # see word2vec min_count
+MIN_WORD_BY_ID <- 50
+IDF_MIN_PERC <- 0.1
 
 # --------------------------------- Functions -------------------------------- #
 sample_first_n_ids <- function(vocab) {
@@ -62,15 +67,27 @@ get_cleansed_vocab <- function(vocab, employer_column) {
   
   # Group by 'lemma' and 'tag', then summarize
   vocab <- vocab %>%
-    group_by(lemma, tag) %>%
+    group_by(ID) %>%
     mutate(
-      n = n(),
+      words_in_id = n()
+    ) %>%
+    ungroup() %>%
+    filter(words_in_id > MIN_WORD_BY_ID) %>%
+    group_by(lemma) %>%
+    mutate(
       document_frequency = n_distinct(ID),
       word_by_employers = n_distinct(.data[[employer_column]]), # Curly double braces doesn't work for me.
       idf = log2(SAMPLE_SIZE / document_frequency)
     ) %>%
+    ungroup() %>%
     filter(word_by_employers > WORDS_BY_EMPLOYER_MIN) %>%
-    select(-word_by_employers)
+    filter(idf > quantile(idf, IDF_MIN_PERC)) %>% # Saturation filter, Risk of filtering out dominant sector-specific terms (check via merged vocab)
+    group_by(lemma) %>%
+    mutate(
+      n = n()
+    ) %>%
+    filter(n > MIN_WORDS) %>%
+    ungroup()
   
   return(vocab)
 }
@@ -104,13 +121,18 @@ branches_per_height <- function(dend, k = 1) {
   dividers <- get_dividers(n, k)
   
   branches <- c()
+  avg_labels <- c()
   for (i in dividers) {
     dendlist <- cut(dend, h = i)$lower
     dendlist_l <- length(dendlist)
-  
     branches <- append(branches, dendlist_l)
+    sum_labels <- 0
+    for (d in dendlist) {
+      sum_labels = sum_labels + length(d %>% labels())
+    }
+    avg_labels <- append(avg_labels, sum_labels / dendlist_l)
   }
-  return(data.frame(x = dividers, y = branches))
+  return(data.frame(height = dividers, branches = branches, avg_labels = avg_labels))
 }
 
 normalizer <- function(v) {
@@ -120,15 +142,28 @@ normalizer <- function(v) {
   return(v_n)
 }
 
+replace_with_first_synonym <- function(word, synonyms_list) {
+  for (synonyms in synonyms_list) {
+    if (any(word %in% synonyms)) {
+      return(synonyms[1])
+    }
+  }
+  return(NA)
+}
+
 # ------------------------ Load datasets and sampling ------------------------ #
 # Public
 public_vocab <- read.csv(PUBLIC_VOCAB_FILE, na.strings=c(""))
 public_vocab_sample <- sample_first_n_ids(public_vocab)
 public_vocab_cleansed <- get_cleansed_vocab(public_vocab_sample, "Behörde")
 
-public_ads <- public_vocab_cleansed[c("ID", "lemma")] %>%
+unique_words_public <- length(unique(public_vocab_cleansed$lemma))
+
+public_ads <- public_vocab_cleansed %>%
   group_by(ID) %>%
-  summarize(lemma = paste(lemma, collapse = ' '))
+  summarize(
+    lemma = paste(lemma, collapse = ' ')
+  )
 
 # Private
 private_vocab <- read.csv(PRIVATE_VOCAB_FILE, na.strings=c(""))
@@ -138,6 +173,8 @@ private_vocab_cleansed <- get_cleansed_vocab(private_vocab_sample, "arbeitgeber"
 private_ads <- private_vocab_cleansed[c("ID", "lemma")] %>%
   group_by(ID) %>%
   summarize(lemma = paste(lemma, collapse = ' '))
+
+# TODO
 
 # -------------------------------- Zipf's law -------------------------------- #
 # Public
@@ -169,79 +206,88 @@ rbind(temp_public, temp_private) %>%
 
 rm(temp_public, temp_private)
 
-# Topic identification
-
-## Generate Document-Term-Matrix (DTM)
-DTM_public <- public_vocab_cleansed %>%
-  group_by(ID, lemma) %>%
-  reframe(
-    count = n(),
-    tfidf = as.integer(count * idf * 1000)
-  ) %>%
-  unique() %>%
-  filter(percent_rank(tfidf) > 0.5) %>%
-  cast_dtm(ID, lemma, tfidf)
-
-## Word embeddings
+# Word embeddings
 w2v_model <- word2vec(x = public_ads$lemma, type = "skip-gram", iter = 10, threads = 4)
 word_embeddings_vec <- as.matrix(w2v_model)
+word_embeddings_vec <- word_embeddings_vec[rownames(word_embeddings_vec) != "</s>", ] # Remove end-of-sentence token
 
-similarity_matrix <- word2vec_similarity(word_embeddings_vec, word_embeddings_vec, top_n = +Inf, type = "cosine")
-
-# Norm
-min_value <- min(similarity_matrix$similarity)
-max_value <- max(similarity_matrix$similarity)
-similarity_matrix$similarity <- (similarity_matrix$similarity - min_value) / (max_value - min_value)
-
-# Pivot the dataframe into a square dissimilarity matrix
-similarity_matrix <- as.matrix(dcast(similarity_matrix, term1 ~ term2, value.var = "similarity"))
-rownames(similarity_matrix) <- similarity_matrix[, "term1"]
-similarity_matrix <- similarity_matrix[, colnames(similarity_matrix) != "term1"]
+similarity_matrix <- word2vec_similarity(word_embeddings_vec, word_embeddings_vec, type = "cosine")
+similarity_matrix <- normalizer(similarity_matrix)
 
 dend <- similarity_matrix %>%
   similarity_to_distance() %>%
   dist() %>%
-  hclust() %>%
-  as.dendrogram(hc)
+  hclust(method = "average") %>%
+  as.dendrogram()
 
-bph <- branches_per_height(dend, k = 0.1)
-bph <- mutate(bph, agg = lag(y) - y)
+bph <- branches_per_height(dend, k = 0.2)
+bph <- mutate(bph, agg = lag(branches) - branches)
 bph[1, ]$agg <- 0
 bph$cum_agg <- cumsum(bph$agg)
 bph$cum_agg_n <- normalizer(bph$cum_agg)
 
-ggplot(bph, aes(x=cum_agg_n, y=x)) +
-  geom_line()
+ggplot(bph, aes(x = height)) +
+  geom_line(aes(y = branches)) +
+  geom_line(aes(y = avg_labels*2)) +
+  geom_vline(xintercept = 3.55, color = "blue", linetype = 'dotted') +
+  geom_vline(xintercept = 4, color = "red") +
+  scale_y_continuous(
+    name = "Cummulative amount of branches",
+    sec.axis = sec_axis(trans=~./2, name="Average labels per branch")
+  )
 
+dendlist <- cut(dend, h = 3.5)
 
-dendlist <- cut(dend, h = 8)
-
-h_labels <- c()
-members <- c()
-for (c in dendlist$lower %>% labels()){
-  c_labels <- dendlist$lower[[as.integer(c)]] %>% labels()
-  members <- append(members, length(c_labels))
-  h_labels <- append(h_labels, paste(c_labels[1:3], collapse = " "))
+# semantic relationships
+synonyms <- list()
+for (d in dendlist$lower){
+  d_synonyms <- list((d %>% labels()))
+  if (length(unlist(d_synonyms)) >= 3) {
+    synonyms <- c(synonyms, d_synonyms) 
+  }
 }
 
-# Scaling
-min_value <- min(members)
-max_value <- max(members)
-members <- ((members - min_value) / (max_value - min_value)) + 0.5
+test <- public_vocab_cleansed %>%
+  rowwise() %>%
+  mutate(synonym = replace_with_first_synonym(lemma, synonyms))
 
-dendlist$upper %>%
-  set("labels_cex", members) %>%
-  set("labels", h_labels) %>% 
-  plot(horiz = TRUE)
+# phonetic relationship, Levenshtein Distance
+x <- unique(public_vocab_cleansed$lemma)
+similarity_matrix <- stringdistmatrix(x, x, method = "lcs")
+similarity_matrix <- normalizer(similarity_matrix)
+rownames(similarity_matrix) <- x
+colnames(similarity_matrix) <- x
 
+dend <- similarity_matrix %>%
+  dist() %>%
+  hclust(method = "average") %>%
+  as.dendrogram()
 
-  
+bph <- branches_per_height(dend, k = 0.1)
+bph <- mutate(bph, agg = lag(branches) - branches)
+bph[1, ]$agg <- 0
+bph$cum_agg <- cumsum(bph$agg)
+bph$cum_agg_n <- normalizer(bph$cum_agg)
 
+ggplot(bph, aes(x = height)) +
+  geom_line(aes(y = branches)) +
+  geom_line(aes(y = avg_labels*2)) +
+  geom_vline(xintercept = 2, color = "blue", linetype = 'dotted') +
+  geom_vline(xintercept = 2, color = "red") +
+  scale_y_continuous(
+    name = "Cummulative amount of branches",
+    sec.axis = sec_axis(trans=~./2, name="Average labels per branch")
+  )
 
-# Form groups of similiar words by usage using hierarchical clustering
+dendlist <- cut(dend, h = 2)
 
-# Replace lower words with group word
-
+similars <- list()
+for (d in dendlist$lower){
+  d_similars <- list((d %>% labels()))
+  if (length(unlist(d_similars)) >= 2) {
+    similars <- c(similars, d_similars) 
+  }
+}
 
 '''
 ap_top_terms <- ap_topics %>%
