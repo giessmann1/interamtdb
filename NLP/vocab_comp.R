@@ -40,6 +40,9 @@ library(circlize)
 library(ggdendro)
 library(stringdist)
 
+library(httr)
+library(xml2)
+
 # --------------------------------- Settings --------------------------------- #
 setwd("~/interamtdb/NLP")
 options(scipen = 10000)
@@ -142,13 +145,40 @@ normalizer <- function(v) {
   return(v_n)
 }
 
-replace_with_first_synonym <- function(word, synonyms_list) {
-  for (synonyms in synonyms_list) {
-    if (any(word %in% synonyms)) {
-      return(synonyms[1])
+replace_with_cluster <- function(word, cluster_list) {
+  for (cluster in cluster_list) {
+    if (any(word %in% cluster)) {
+      return(list(cluster))
     }
   }
   return(NA)
+}
+
+get_associated_words <- function(word) {
+  # URL encode the word
+  word <- URLencode(word)
+  
+  # Send a GET request to the OpenThesaurus API
+  response <- GET(paste0("https://www.openthesaurus.de/synonyme/search?q=", word, "&format=application/json"))
+  
+  # Check if the request was successful
+  if (status_code(response) == 200) {
+    # Parse the response as JSON
+    content <- content(response, "parsed")
+    
+    # Extract the synonyms
+    synonyms <- lapply(content$synsets, function(x) x$terms)
+    
+    # Flatten the list of synonyms
+    synonyms <- unlist(synonyms)
+    
+    # Remove the original word from the synonyms
+    synonyms <- synonyms[synonyms != URLdecode(word)]
+    
+    return(synonyms)
+  } else {
+    stop("API request failed")
+  }
 }
 
 # ------------------------ Load datasets and sampling ------------------------ #
@@ -236,7 +266,7 @@ ggplot(bph, aes(x = height)) +
     sec.axis = sec_axis(trans=~./2, name="Average labels per branch")
   )
 
-dendlist <- cut(dend, h = 3.5)
+dendlist <- cut(dend, h = 3)
 
 # semantic relationships
 synonyms <- list()
@@ -247,23 +277,23 @@ for (d in dendlist$lower){
   }
 }
 
-test <- public_vocab_cleansed %>%
+public_vocab_cleansed <- public_vocab_cleansed %>%
   rowwise() %>%
-  mutate(synonym = replace_with_first_synonym(lemma, synonyms))
+  mutate(synonym = replace_with_cluster(lemma, synonyms))
 
 # phonetic relationship, Levenshtein Distance
-x <- unique(public_vocab_cleansed$lemma)
-similarity_matrix <- stringdistmatrix(x, x, method = "lcs")
+unique_words <- unique(public_vocab_cleansed$lemma)
+similarity_matrix <- stringdistmatrix(unique_words, unique_words, method = "lcs")
 similarity_matrix <- normalizer(similarity_matrix)
-rownames(similarity_matrix) <- x
-colnames(similarity_matrix) <- x
+rownames(similarity_matrix) <- unique_words
+colnames(similarity_matrix) <- unique_words
 
 dend <- similarity_matrix %>%
   dist() %>%
   hclust(method = "average") %>%
   as.dendrogram()
 
-bph <- branches_per_height(dend, k = 0.1)
+bph <- branches_per_height(dend, k = 0.2)
 bph <- mutate(bph, agg = lag(branches) - branches)
 bph[1, ]$agg <- 0
 bph$cum_agg <- cumsum(bph$agg)
@@ -279,7 +309,7 @@ ggplot(bph, aes(x = height)) +
     sec.axis = sec_axis(trans=~./2, name="Average labels per branch")
   )
 
-dendlist <- cut(dend, h = 2)
+dendlist <- cut(dend, h = 1.5)
 
 similars <- list()
 for (d in dendlist$lower){
@@ -288,6 +318,22 @@ for (d in dendlist$lower){
     similars <- c(similars, d_similars) 
   }
 }
+
+public_vocab_cleansed <- public_vocab_cleansed %>%
+  rowwise() %>%
+  mutate(similars = replace_with_cluster(lemma, similars))
+
+  
+# Thesaurus / Similarity of meaning
+associated_words_list <- list()
+
+for (i in seq_along(unique_words)) {
+  print(i)
+  associated_words_list[[unique_words[i]]] <- get_associated_words(unique_words[i])
+  Sys.sleep(1)
+}
+
+# Cross-referencing 
 
 '''
 ap_top_terms <- ap_topics %>%
