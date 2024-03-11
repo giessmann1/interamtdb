@@ -45,7 +45,7 @@ library(xml2)
 
 # --------------------------------- Settings --------------------------------- #
 setwd("~/interamtdb/NLP")
-options(scipen = 10000)
+options(scipen = 999)
 
 # --------------------------------- Constants -------------------------------- #
 SAMPLE_SIZE <- 200
@@ -101,7 +101,7 @@ similarity_to_distance <- function(similarity_matrix) {
   
   for (i in 1:n) {
     for (j in 1:n) {
-      distance_matrix[i, j] <- 1 - as.numeric(similarity_matrix[i, j])
+      distance_matrix[i, j] <- round(1 - similarity_matrix[i, j], digits = 4)
     }
   }
   
@@ -236,16 +236,16 @@ rbind(temp_public, temp_private) %>%
 
 rm(temp_public, temp_private)
 
-# Word embeddings
+# Word embeddings,Semantic relationships --> Words close together, Vector spaces
 w2v_model <- word2vec(x = public_ads$lemma, type = "skip-gram", iter = 10, threads = 4)
 word_embeddings_vec <- as.matrix(w2v_model)
 word_embeddings_vec <- word_embeddings_vec[rownames(word_embeddings_vec) != "</s>", ] # Remove end-of-sentence token
 
-similarity_matrix <- word2vec_similarity(word_embeddings_vec, word_embeddings_vec, type = "cosine")
-similarity_matrix <- normalizer(similarity_matrix)
+similarity_matrix_semantic <- word2vec_similarity(word_embeddings_vec, word_embeddings_vec, type = "cosine")
+similarity_matrix_semantic <- normalizer(similarity_matrix_semantic)
+distance_matrix_semantic <- similarity_to_distance(similarity_matrix_semantic)
 
 dend <- similarity_matrix %>%
-  similarity_to_distance() %>%
   dist() %>%
   hclust(method = "average") %>%
   as.dendrogram()
@@ -268,7 +268,6 @@ ggplot(bph, aes(x = height)) +
 
 dendlist <- cut(dend, h = 3)
 
-# semantic relationships
 synonyms <- list()
 for (d in dendlist$lower){
   d_synonyms <- list((d %>% labels()))
@@ -279,16 +278,16 @@ for (d in dendlist$lower){
 
 public_vocab_cleansed <- public_vocab_cleansed %>%
   rowwise() %>%
-  mutate(synonym = replace_with_cluster(lemma, synonyms))
+  mutate(synonym_c = replace_with_cluster(lemma, synonyms))
 
-# phonetic relationship, Levenshtein Distance
+# Phonetic relationship, Levenshtein Distance
 unique_words <- unique(public_vocab_cleansed$lemma)
-similarity_matrix <- stringdistmatrix(unique_words, unique_words, method = "lcs")
-similarity_matrix <- normalizer(similarity_matrix)
-rownames(similarity_matrix) <- unique_words
-colnames(similarity_matrix) <- unique_words
+distance_matrix_phonetic <- stringdistmatrix(unique_words, unique_words, method = "lcs")
+distance_matrix_phonetic <- normalizer(similarity_matrix)
+rownames(distance_matrix_phonetic) <- unique_words
+colnames(distance_matrix_phonetic) <- unique_words
 
-dend <- similarity_matrix %>%
+dend <- distance_matrix_phonetic %>%
   dist() %>%
   hclust(method = "average") %>%
   as.dendrogram()
@@ -321,17 +320,80 @@ for (d in dendlist$lower){
 
 public_vocab_cleansed <- public_vocab_cleansed %>%
   rowwise() %>%
-  mutate(similars = replace_with_cluster(lemma, similars))
-
+  mutate(similars_c = replace_with_cluster(lemma, similars))
   
 # Thesaurus / Similarity of meaning
 associated_words_list <- list()
 
 for (i in seq_along(unique_words)) {
   print(i)
-  associated_words_list[[unique_words[i]]] <- get_associated_words(unique_words[i])
+  associated_words <- get_associated_words(unique_words[i])
+  if (is.null(associated_words)) {associated_words = list()}
+  associated_words_list[[unique_words[i]]] <- associated_words
   Sys.sleep(1)
 }
+saveRDS(associated_words_list, file = "thesaurus_raw.rds")
+
+associated_words_list_cleansed <- vector(mode='list', length=length(associated_words_list))
+names(associated_words_list_cleansed) <- names(associated_words_list)
+
+
+for (i in 1:length(associated_words_list_cleansed)) {
+  t <- associated_words_list[[i]]
+  t_new <- list()
+  if (length(t) > 0) {
+    for (j in 1:length(t)) {
+      if (names(t[j]) == "term") {
+        tj_new <- str_replace_all(t[j], "\\(.*?\\)", "")
+        tj_new <- gsub("[^a-zA-ZÄÄöÖÜüß ]", "", tj_new)
+        tj_new <- trimws(tj_new)
+        if (length(unlist(strsplit(tj_new, split = " "))) > 1) {next}
+        else {
+          tj_new = tolower(tj_new)
+          t_new <- c(t_new, tj_new)
+        }
+      }
+    }
+    t_new <- unique(t_new)
+  }
+  associated_words_list_cleansed[[i]] <- t_new
+}
+
+words <- names(associated_words_list_cleansed)
+num_words <- length(words)
+
+# Initialize an empty distance matrix with -1 indicating an undefined relationship
+distance_matrix_thesaurus <- matrix(-1, nrow = num_words, ncol = num_words)
+
+for (i in 1:num_words) {
+  for (j in 1:num_words) {
+    # Check if the distance is undefined (-1)
+    if (distance_matrix_thesaurus[i, j] == -1) {
+      # Same words
+      if (i == j) {
+        distance_matrix_thesaurus[i, j] <- 0
+        distance_matrix_thesaurus[j, i] <- 0
+      }
+      else if (words[i] %in% unlist(associated_words_list_cleansed[[j]]) ||
+          words[j] %in% unlist(associated_words_list_cleansed[[i]])) {
+        distance_matrix_thesaurus[i, j] <- 0  # Set distance to 0 if there's a connection in either direction
+        distance_matrix_thesaurus[j, i] <- 0  # Set distance to 0 for the other direction as well
+      } else {
+        distance_matrix_thesaurus[i, j] <- 1
+        distance_matrix_thesaurus[j, i] <- 1
+      }
+    }
+  }
+}
+
+colnames(distance_matrix_thesaurus) <- words
+rownames(distance_matrix_thesaurus) <- words
+rm(words, num_words)
+
+# Addition of matrices
+combined_distance_matrix = distance_matrix_semantic + distance_matrix_phonetic + distance_matrix_thesaurus
+
+
 
 # Cross-referencing 
 
