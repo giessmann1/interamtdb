@@ -67,7 +67,6 @@ sample_first_n_ids <- function(vocab) {
 get_cleansed_vocab <- function(vocab, employer_column) {
   # Tag cleansing
   vocab$tag <- gsub("\\(.+\\)", "", vocab$tag)
-  
   # Group by 'lemma' and 'tag', then summarize
   vocab <- vocab %>%
     group_by(ID) %>%
@@ -79,35 +78,33 @@ get_cleansed_vocab <- function(vocab, employer_column) {
     group_by(lemma) %>%
     mutate(
       document_frequency = n_distinct(ID),
-      word_by_employers = n_distinct(.data[[employer_column]]), # Curly double braces doesn't work for me.
+       # Curly double braces doesn't work for me.
+      word_by_employers = n_distinct(.data[[employer_column]]),
       idf = log2(SAMPLE_SIZE / document_frequency)
     ) %>%
     ungroup() %>%
     filter(word_by_employers > WORDS_BY_EMPLOYER_MIN) %>%
-    filter(idf > quantile(idf, IDF_MIN_PERC)) %>% # Saturation filter, Risk of filtering out dominant sector-specific terms (check via merged vocab)
+    # Saturation filter, Risk of filtering out dominant sector-specific terms
+    filter(idf > quantile(idf, IDF_MIN_PERC)) %>%
     group_by(lemma) %>%
     mutate(
       n = n()
     ) %>%
     filter(n > MIN_WORDS) %>%
     ungroup()
-  
   return(vocab)
 }
 
 similarity_to_distance <- function(similarity_matrix) {
   n <- nrow(similarity_matrix)
   distance_matrix <- matrix(0, n, n)
-  
   for (i in 1:n) {
     for (j in 1:n) {
       distance_matrix[i, j] <- round(1 - similarity_matrix[i, j], digits = 4)
     }
   }
-  
   rownames(distance_matrix) <- rownames(similarity_matrix)
   colnames(distance_matrix) <- colnames(similarity_matrix)
-  
   return(distance_matrix)
 }
 
@@ -122,7 +119,6 @@ get_dividers <- function(n, k) {
 branches_per_height <- function(dend, k = 1) {
   n <- get_branches_heights(dend, decreasing = TRUE)[1]
   dividers <- get_dividers(n, k)
-  
   branches <- c()
   avg_labels <- c()
   for (i in dividers) {
@@ -135,7 +131,8 @@ branches_per_height <- function(dend, k = 1) {
     }
     avg_labels <- append(avg_labels, sum_labels / dendlist_l)
   }
-  return(data.frame(height = dividers, branches = branches, avg_labels = avg_labels))
+  return(
+    data.frame(height = dividers, branches = branches, avg_labels = avg_labels))
 }
 
 normalizer <- function(v) {
@@ -146,9 +143,11 @@ normalizer <- function(v) {
 }
 
 replace_with_cluster <- function(word, cluster_list) {
-  for (cluster in cluster_list) {
+  for (i in seq_along(cluster_list)) {
+    name <- names(cluster_list[i])
+    cluster = cluster_list[[i]]
     if (any(word %in% cluster)) {
-      return(list(cluster))
+      return(name)
     }
   }
   return(NA)
@@ -157,24 +156,13 @@ replace_with_cluster <- function(word, cluster_list) {
 get_associated_words <- function(word) {
   # URL encode the word
   word <- URLencode(word)
-  
-  # Send a GET request to the OpenThesaurus API
-  response <- GET(paste0("https://www.openthesaurus.de/synonyme/search?q=", word, "&format=application/json"))
-  
-  # Check if the request was successful
+  response <- GET(
+    paste0("https://www.openthesaurus.de/synonyme/search?q=", word, "&format=application/json"))
   if (status_code(response) == 200) {
-    # Parse the response as JSON
     content <- content(response, "parsed")
-    
-    # Extract the synonyms
     synonyms <- lapply(content$synsets, function(x) x$terms)
-    
-    # Flatten the list of synonyms
     synonyms <- unlist(synonyms)
-    
-    # Remove the original word from the synonyms
     synonyms <- synonyms[synonyms != URLdecode(word)]
-    
     return(synonyms)
   } else {
     stop("API request failed")
@@ -187,24 +175,25 @@ public_vocab <- read.csv(PUBLIC_VOCAB_FILE, na.strings=c(""))
 public_vocab_sample <- sample_first_n_ids(public_vocab)
 public_vocab_cleansed <- get_cleansed_vocab(public_vocab_sample, "Behörde")
 
-unique_words_public <- length(unique(public_vocab_cleansed$lemma))
+unique_words_public <- unique(public_vocab_cleansed$lemma)
 
 public_ads <- public_vocab_cleansed %>%
   group_by(ID) %>%
   summarize(
-    lemma = paste(lemma, collapse = ' ')
+    lemma = paste(lemma, collapse = " ")
   )
 
 # Private
 private_vocab <- read.csv(PRIVATE_VOCAB_FILE, na.strings=c(""))
 private_vocab_sample <- sample_first_n_ids(private_vocab)
-private_vocab_cleansed <- get_cleansed_vocab(private_vocab_sample, "arbeitgeber")
+private_vocab_cleansed <- 
+  get_cleansed_vocab(private_vocab_sample, "arbeitgeber")
+
+unique_words_private <- unique(private_vocab_cleansed$lemma)
 
 private_ads <- private_vocab_cleansed[c("ID", "lemma")] %>%
   group_by(ID) %>%
-  summarize(lemma = paste(lemma, collapse = ' '))
-
-# TODO
+  summarize(lemma = paste(lemma, collapse = " "))
 
 # -------------------------------- Zipf's law -------------------------------- #
 # Public
@@ -236,120 +225,52 @@ rbind(temp_public, temp_private) %>%
 
 rm(temp_public, temp_private)
 
-# Word embeddings,Semantic relationships --> Words close together, Vector spaces
+# ------------------------ Generate distance measures ------------------------ #
+# Semantic relationships
 w2v_model <- word2vec(x = public_ads$lemma, type = "skip-gram", iter = 10, threads = 4)
 word_embeddings_vec <- as.matrix(w2v_model)
-word_embeddings_vec <- word_embeddings_vec[rownames(word_embeddings_vec) != "</s>", ] # Remove end-of-sentence token
+# Remove end-of-sentence token
+word_embeddings_vec <- word_embeddings_vec[rownames(word_embeddings_vec) != "</s>", ]
 
 similarity_matrix_semantic <- word2vec_similarity(word_embeddings_vec, word_embeddings_vec, type = "cosine")
 similarity_matrix_semantic <- normalizer(similarity_matrix_semantic)
 distance_matrix_semantic <- similarity_to_distance(similarity_matrix_semantic)
 
-dend <- similarity_matrix %>%
-  dist() %>%
-  hclust(method = "average") %>%
-  as.dendrogram()
-
-bph <- branches_per_height(dend, k = 0.2)
-bph <- mutate(bph, agg = lag(branches) - branches)
-bph[1, ]$agg <- 0
-bph$cum_agg <- cumsum(bph$agg)
-bph$cum_agg_n <- normalizer(bph$cum_agg)
-
-ggplot(bph, aes(x = height)) +
-  geom_line(aes(y = branches)) +
-  geom_line(aes(y = avg_labels*2)) +
-  geom_vline(xintercept = 3.55, color = "blue", linetype = 'dotted') +
-  geom_vline(xintercept = 4, color = "red") +
-  scale_y_continuous(
-    name = "Cummulative amount of branches",
-    sec.axis = sec_axis(trans=~./2, name="Average labels per branch")
-  )
-
-dendlist <- cut(dend, h = 3)
-
-synonyms <- list()
-for (d in dendlist$lower){
-  d_synonyms <- list((d %>% labels()))
-  if (length(unlist(d_synonyms)) >= 3) {
-    synonyms <- c(synonyms, d_synonyms) 
-  }
-}
-
-public_vocab_cleansed <- public_vocab_cleansed %>%
-  rowwise() %>%
-  mutate(synonym_c = replace_with_cluster(lemma, synonyms))
-
-# Phonetic relationship, Levenshtein Distance
-unique_words <- unique(public_vocab_cleansed$lemma)
-distance_matrix_phonetic <- stringdistmatrix(unique_words, unique_words, method = "lcs")
+# Phonetic relationship
+# Levenshtein Distance
+distance_matrix_phonetic <- stringdistmatrix(unique_words_public, unique_words_public, method = "lcs")
 distance_matrix_phonetic <- normalizer(similarity_matrix)
-rownames(distance_matrix_phonetic) <- unique_words
-colnames(distance_matrix_phonetic) <- unique_words
+rownames(distance_matrix_phonetic) <- unique_words_public
+colnames(distance_matrix_phonetic) <- unique_words_public
 
-dend <- distance_matrix_phonetic %>%
-  dist() %>%
-  hclust(method = "average") %>%
-  as.dendrogram()
-
-bph <- branches_per_height(dend, k = 0.2)
-bph <- mutate(bph, agg = lag(branches) - branches)
-bph[1, ]$agg <- 0
-bph$cum_agg <- cumsum(bph$agg)
-bph$cum_agg_n <- normalizer(bph$cum_agg)
-
-ggplot(bph, aes(x = height)) +
-  geom_line(aes(y = branches)) +
-  geom_line(aes(y = avg_labels*2)) +
-  geom_vline(xintercept = 2, color = "blue", linetype = 'dotted') +
-  geom_vline(xintercept = 2, color = "red") +
-  scale_y_continuous(
-    name = "Cummulative amount of branches",
-    sec.axis = sec_axis(trans=~./2, name="Average labels per branch")
-  )
-
-dendlist <- cut(dend, h = 1.5)
-
-similars <- list()
-for (d in dendlist$lower){
-  d_similars <- list((d %>% labels()))
-  if (length(unlist(d_similars)) >= 2) {
-    similars <- c(similars, d_similars) 
-  }
-}
-
-public_vocab_cleansed <- public_vocab_cleansed %>%
-  rowwise() %>%
-  mutate(similars_c = replace_with_cluster(lemma, similars))
-  
-# Thesaurus / Similarity of meaning
+# Thesaurus relationship
 associated_words_list <- list()
 
-for (i in seq_along(unique_words)) {
-  print(i)
-  associated_words <- get_associated_words(unique_words[i])
-  if (is.null(associated_words)) {associated_words = list()}
-  associated_words_list[[unique_words[i]]] <- associated_words
+for (i in seq_along(unique_words_public)) {
+  associated_words <- get_associated_words(unique_words_public[i])
+  if (is.null(associated_words)) {associated_words <- list()}
+  associated_words_list[[unique_words_public[i]]] <- associated_words
   Sys.sleep(1)
 }
 saveRDS(associated_words_list, file = "thesaurus_raw.rds")
 
-associated_words_list_cleansed <- vector(mode='list', length=length(associated_words_list))
+associated_words_list_cleansed <-
+  vector(mode = "list", length = length(associated_words_list))
 names(associated_words_list_cleansed) <- names(associated_words_list)
 
-
-for (i in 1:length(associated_words_list_cleansed)) {
+for (i in seq_along(associated_words_list_cleansed)) {
   t <- associated_words_list[[i]]
   t_new <- list()
   if (length(t) > 0) {
-    for (j in 1:length(t)) {
+    for (j in seq_along(t)) {
       if (names(t[j]) == "term") {
         tj_new <- str_replace_all(t[j], "\\(.*?\\)", "")
         tj_new <- gsub("[^a-zA-ZÄÄöÖÜüß ]", "", tj_new)
         tj_new <- trimws(tj_new)
-        if (length(unlist(strsplit(tj_new, split = " "))) > 1) {next}
-        else {
-          tj_new = tolower(tj_new)
+        if (length(unlist(strsplit(tj_new, split = " "))) > 1) {
+          next
+        } else {
+          tj_new <- tolower(tj_new)
           t_new <- c(t_new, tj_new)
         }
       }
@@ -365,19 +286,20 @@ num_words <- length(words)
 # Initialize an empty distance matrix with -1 indicating an undefined relationship
 distance_matrix_thesaurus <- matrix(-1, nrow = num_words, ncol = num_words)
 
-for (i in 1:num_words) {
-  for (j in 1:num_words) {
+for (i in seq_along(num_words)) {
+  for (j in seq_along(num_words)) {
     # Check if the distance is undefined (-1)
     if (distance_matrix_thesaurus[i, j] == -1) {
       # Same words
       if (i == j) {
         distance_matrix_thesaurus[i, j] <- 0
         distance_matrix_thesaurus[j, i] <- 0
-      }
-      else if (words[i] %in% unlist(associated_words_list_cleansed[[j]]) ||
+      } else if (words[i] %in% unlist(associated_words_list_cleansed[[j]]) ||
           words[j] %in% unlist(associated_words_list_cleansed[[i]])) {
-        distance_matrix_thesaurus[i, j] <- 0  # Set distance to 0 if there's a connection in either direction
-        distance_matrix_thesaurus[j, i] <- 0  # Set distance to 0 for the other direction as well
+        # Set distance to 0 if there's a connection in either direction
+        distance_matrix_thesaurus[i, j] <- 0
+        # Set distance to 0 for the other direction as well
+        distance_matrix_thesaurus[j, i] <- 0
       } else {
         distance_matrix_thesaurus[i, j] <- 1
         distance_matrix_thesaurus[j, i] <- 1
@@ -391,11 +313,41 @@ rownames(distance_matrix_thesaurus) <- words
 rm(words, num_words)
 
 # Addition of matrices
-combined_distance_matrix = distance_matrix_semantic + distance_matrix_phonetic + distance_matrix_thesaurus
+combined_distance_matrix <- distance_matrix_semantic + distance_matrix_phonetic + distance_matrix_thesaurus
 
+dend <- combined_distance_matrix %>%
+  dist() %>%
+  hclust(method = "average") %>%
+  as.dendrogram()
 
+bph <- branches_per_height(dend, k = 0.5)
+bph <- mutate(bph, agg = lag(branches) - branches)
+bph[1, ]$agg <- 0
+bph$cum_agg <- cumsum(bph$agg)
+bph$cum_agg_n <- normalizer(bph$cum_agg)
 
-# Cross-referencing 
+ggplot(bph, aes(x = height)) +
+  geom_line(aes(y = branches)) +
+  geom_line(aes(y = avg_labels*2)) +
+  geom_vline(xintercept = 7.5, color = "red") +
+  scale_y_continuous(
+    name = "Cummulative amount of branches",
+    sec.axis = sec_axis(trans = ~./2, name = "Average labels per branch")
+  )
+
+dendlist <- cut(dend, h = 7.5)
+
+tm_labels <- list()
+for (d in dendlist$lower){
+  tm_labels <- c(tm_labels, list(d %>% labels()))
+}
+names(tm_labels) <- paste("label", seq_along(tm_labels), sep = "")
+
+# ------------------- Label replacement and topic modeling ------------------- #
+public_vocab_cleansed <- public_vocab_cleansed %>%
+  rowwise() %>%
+  mutate(tm_label = replace_with_cluster(lemma, tm_labels))
+
 
 '''
 ap_top_terms <- ap_topics %>%
