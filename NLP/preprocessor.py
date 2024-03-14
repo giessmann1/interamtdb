@@ -348,7 +348,7 @@ if __name__ == '__main__':
     # view_df_as_html(df)
     df['word'] = df['word'].apply(lambda x: x.replace('\n', '\\n'))
     df['word'] = df['word'].apply(lambda x: x.replace('\t', '\\t'))
-    df.to_csv('public_vocab.csv', quoting=csv.QUOTE_ALL, index=False)
+    df.to_csv('public_ads.csv', quoting=csv.QUOTE_ALL, index=False)
     
     # BA
     print(bcolors.OKBLUE + "BA preprocessing started..." + bcolors.ENDC)
@@ -356,7 +356,7 @@ if __name__ == '__main__':
     # view_df_as_html(df)
     df['word'] = df['word'].apply(lambda x: x.replace('\n', '\\n'))
     df['word'] = df['word'].apply(lambda x: x.replace('\t', '\\t'))
-    df.to_csv('private_vocab.csv', quoting=csv.QUOTE_ALL, index=False)
+    df.to_csv('private_ads.csv', quoting=csv.QUOTE_ALL, index=False)
 
     '''
     # For testing purposes

@@ -165,7 +165,10 @@ interamtdb-data/
 geckodriver.log
 scraper-log.txt
 temp.html
-*_vocab.csv
+private_ads.csv
+public_ads.csv
+thesaurus_private_words.rds
+thesaurus_public_words.rds
 
 # R
 .Rapp.history
