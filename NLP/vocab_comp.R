@@ -196,10 +196,7 @@ synonyms_distance_matrix <- function(v) {
     word2vec(
       x = v,
       type = "skip-gram",
-      iter = 20,
-      threads = 4,
-      window = 10,
-      dim = 200
+      iter = 10,
     )
   word_embeddings_vec <- as.matrix(w2v_model)
   # Remove end-of-sentence token
@@ -363,10 +360,7 @@ cluster_tagging <-
       word2vec(
         x = cleansed_dataframe_source$text,
         type = "skip-gram",
-        iter = 20,
-        threads = 4,
-        window = 10,
-        dim = 200
+        iter = 200
       )
     word_embeddings_vec <- as.matrix(w2v_model)
     word_embeddings_vec <-
@@ -399,6 +393,8 @@ cluster_tagging <-
       data.frame(cluster = i, label = clusters[[i]])
     })
     
+    cat(length(clusters), "clusters generated.\n")
+    
     clusters_df <- do.call(rbind, clusters)
     
     clusters_df <- clusters_df %>%
@@ -417,32 +413,40 @@ cluster_tagging <-
     return(clusters_df)
   }
 
-create_html_output <- function(df, group, n) {
+create_html_output <- function(df, group, employer_column, n) {
   if (n > length(unique(df$ID))) {
     print(
       "The number of unique IDs is less than the specified value of 'n'. Please provide a smaller value of 'n'."
     )
   }
   
+  cluster_names <-
+    c(sort(as.character(unique(df$cluster_name[df$cluster_name != "NA"]))), "NA")
+  
   cluster_colors <-
     setNames(alpha(hcl(
-      seq(15, 375, length.out = n_distinct(df$cluster)), 80, 80
-    ), 0.7), unique(df$cluster))
+      seq(15, 375, length.out = n_distinct(cluster_names)), 80, 80
+    ), 1), unique(cluster_names))
   
   html_head <-
     "<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody {\n  font-family: 'Arial', sans-serif;\n}\n</style>\n</head>\n\n<body>\n"
   
   html_foot <- "</body>\n</html>"
   
+  alpha_name <- paste("alpha_", group, sep = "")
+  
   generate_document_html <- function(data) {
     data$word[data$word == "\\n"] <- "<br>"
+    data$word[data$word == "\\t"] <- "&nbsp;"
     
     document_html <- paste(
       paste(
         "<h3>ID: ",
         data$ID[1],
-        ", Behörde: ",
-        data$Behörde[1],
+        ", ",
+        employer_column,
+        ": ",
+        data[[employer_column]][1],
         "</h3>",
         sep = ""
       ),
@@ -450,7 +454,7 @@ create_html_output <- function(df, group, n) {
         data
       )), function(i) {
         ifelse(
-          is.na(data$cluster[i]),
+          is.na(data$cluster_name[i]),
           paste(
             "<span style='background-color: transparent;' title='Cluster: NA'>",
             data$word[i],
@@ -458,14 +462,19 @@ create_html_output <- function(df, group, n) {
             sep = ""
           ),
           paste(
-            "<span style='background-color:",
-            cluster_colors[data$cluster[i]],
-            ";' title='Cluster: ",
-            data$cluster[i],
-            "'>",
-            data$word[i],
-            "</span>",
-            sep = ""
+            paste(
+              "<span style='background-color:",
+              cluster_colors[data$cluster_name[i]],
+              "; opacity:", data[[alpha_name]][i],
+              ";",
+              ifelse(data[[alpha_name]][i] >= 0.8, "font-weight: bold;", ""),
+              "' title='Cluster: ",
+              data$cluster_name[i],
+              "'>",
+              data$word[i],
+              "</span>",
+              sep = ""
+            )
           )
         )
       }),
@@ -475,9 +484,6 @@ create_html_output <- function(df, group, n) {
     
     return(document_html)
   }
-  
-  cluster_names <-
-    c(sort(as.character(unique(df$cluster[df$cluster != "NA"]))), "NA")
   
   legend_html <- paste("<h3>Legend</h3>",
                        paste(lapply(cluster_names, function(cluster) {
@@ -511,6 +517,19 @@ create_html_output <- function(df, group, n) {
   writeLines(final_html_string, output_file)
 }
 
+log_likelihood <- function(n_public, n_private, E_public, E_private) {
+  result <- 2 * ((n_public * ifelse(n_public == 0 | E_public == 0, 0, log(n_public/E_public))) + 
+                   (n_private * ifelse(n_private == 0 | E_private == 0, 0, log(n_private/E_private))))
+  return(result)
+}
+
+log_ratio <- function(norm_public, public_total_words, private_total_words, norm_private) {
+  zero_frequency <- 0.5
+  result <- log2((ifelse(norm_public == 0, zero_frequency/public_total_words, norm_public)) / 
+                  (ifelse(norm_private == 0, zero_frequency/private_total_words, norm_private)))
+  return(result)
+}
+
 # ------------------------ Load datasets and sampling ------------------------ #
 # Public
 public_ads_raw <- read.csv(PUBLIC_ADS_FILE, na.strings = c(""))
@@ -519,7 +538,12 @@ rm(public_ads_raw)
 public_ads_cleansed <-
   get_cleansed_vocab(public_ads_sample_raw, "Behörde")
 
-unique_words_public <- unique(public_ads_cleansed$lemma)
+unique_words_public <- public_ads_cleansed %>%
+  select(lemma) %>%
+  group_by(lemma) %>%
+  summarise(n = n())
+
+public_total_words = sum(unique_words_public$n)
 
 public_ads_text_cleansed <- public_ads_cleansed %>%
   group_by(ID) %>%
@@ -532,7 +556,12 @@ rm(private_ads_raw)
 private_ads_cleansed <-
   get_cleansed_vocab(private_ads_sample_raw, "arbeitgeber")
 
-unique_words_private <- unique(private_ads_cleansed$lemma)
+unique_words_private <- private_ads_cleansed %>%
+  select(lemma) %>%
+  group_by(lemma) %>%
+  summarise(n = n())
+
+private_total_words = sum(unique_words_private$n)
 
 private_ads_text_cleansed <-
   private_ads_cleansed[c("ID", "lemma")] %>%
@@ -580,15 +609,15 @@ private_distance_matrix_synonyms <-
 
 # Phonetic relationship (Longest Common Substring Distance)
 public_distance_matrix_phonetic <-
-  lcs_distance_matrix(unique_words_public)
+  lcs_distance_matrix(unique_words_public$lemma)
 private_distance_matrix_phonetic <-
-  lcs_distance_matrix(unique_words_private)
+  lcs_distance_matrix(unique_words_private$lemma)
 
 # Thesaurus relationship
 public_distance_matrix_thesaurus <-
-  thesaurus_distance_matrix(unique_words_public, group = "public", load = TRUE)
+  thesaurus_distance_matrix(unique_words_public$lemma, group = "public", load = TRUE)
 private_distance_matrix_thesaurus <-
-  thesaurus_distance_matrix(unique_words_private, group = "private", load = TRUE)
+  thesaurus_distance_matrix(unique_words_private$lemma, group = "private", load = TRUE)
 
 # Addition of matrices, add weights in results getting better
 public_combined_distance_matrix <- add_matrices(
@@ -605,56 +634,81 @@ private_combined_distance_matrix <- add_matrices(
 
 # Label clustering, adjust h value based on coherent results
 public_labels_df <-
-  cluster_labels(public_combined_distance_matrix, 7.2)
+  cluster_labels(public_combined_distance_matrix, 8.5)
+
 private_labels_df <-
-  cluster_labels(private_combined_distance_matrix, 6.9)
+  cluster_labels(private_combined_distance_matrix, 6.3)
 
 # --------- Label replacement and Cluster Extraction using Word2Vec ---------- #
-public_ads_cleansed <- public_ads_cleansed %>%
+public_ads_cleansed_labels <- public_ads_cleansed %>%
   left_join(public_labels_df, by = c('lemma' = 'words'))
 
-private_ads_cleansed <- private_ads_cleansed %>%
+private_ads_cleansed_labels <- private_ads_cleansed %>%
   left_join(private_labels_df, by = c('lemma' = 'words'))
 
 public_cluster <-
-  cluster_tagging(public_ads_cleansed, public_labels_df, "public", 2)
+  cluster_tagging(public_ads_cleansed_labels, public_labels_df, "public", 2.3)
+
 private_cluster <-
-  cluster_tagging(private_ads_cleansed, private_labels_df, "private", 1.35)
-
-public_ads_sample_raw <- public_ads_sample_raw %>%
-  left_join(public_cluster, by = c('lemma' = 'words'))
-
-private_ads_sample_raw <- private_ads_sample_raw %>%
-  left_join(private_cluster, by = c('lemma' = 'words'))
-
-# HTML Output test
-create_html_output(public_ads_sample_raw, "public", 1)
+  cluster_tagging(private_ads_cleansed_labels, private_labels_df, "private", 2)
 
 # ---------------------------- Corpora comparison ---------------------------- #
+# After manual inspection, assign names for clusters
+
+public_cluster_names <- c("Requirements", "Tasks", "Conditions", "Company", "Requirements", "Company", "Application")
+private_cluster_names <- c("Tasks", "Requirements", "Conditions", "Company", "Tasks", "Application", "Conditions")
+
+public_cluster_names <- data.frame(
+  cluster_nr = unique(public_cluster$cluster),
+  cluster_name = public_cluster_names
+)
+
+private_cluster_names <- data.frame(
+  cluster_nr = unique(private_cluster$cluster),
+  cluster_name = private_cluster_names
+)
+
+public_cluster <- public_cluster %>%
+  left_join(public_cluster_names, by = c('cluster' = 'cluster_nr'))
+
+private_cluster <- private_cluster %>%
+  left_join(private_cluster_names, by = c('cluster' = 'cluster_nr'))
+
+public_ads_sample_raw_clusters <- public_ads_sample_raw %>%
+  left_join(public_cluster, by = c('lemma' = 'words'))
+
+private_ads_sample_raw_clusters <- private_ads_sample_raw %>%
+  left_join(private_cluster, by = c('lemma' = 'words'))
+
+# ------------------------------- Descriptives ------------------------------- #
+# TODO
+
+# ----------------------------- Word differences ----------------------------- #
 joined_words <-
   full_join(
-    public_words,
-    private_words,
-    by = c('lemma', 'tag'),
+    unique_words_public,
+    unique_words_private,
+    by = c('lemma'),
     suffix = c("_public", "_private")
   )
 joined_words[is.na(joined_words)] <- 0
 
 joined_words <- joined_words %>%
-  mutate(over_underuse = ifelse(O_public > O_private, 1,-1)) %>%
+  mutate(over_underuse = ifelse(n_public > n_private, 1,-1)) %>%
   mutate(E_public = public_total_words * (n_public + n_private) / (public_total_words + private_total_words)) %>%
   mutate(E_private = private_total_words * (n_public + n_private) / (public_total_words + private_total_words)) %>%
-  mutate(Log_likelihood = 2 * ((n_public * log(n_public / E_public)) + (n_private *
-                                                                          log(
-                                                                            n_private / E_private
-                                                                          )))) %>%
-  mutate(Log_ratio = log2(O_public / O_private))
+  mutate(norm_public = n_public / public_total_words) %>%
+  mutate(norm_private = n_private / private_total_words) %>%
+  mutate(Log_likelihood = log_likelihood(n_public, n_private, E_public, E_private)) %>%
+  mutate(Log_ratio = log_ratio(norm_public, public_total_words, private_total_words, norm_private))
 
-lower_quantil <- quantile(joined_words$Log_ratio, 0.10)
-upper_quantil <- quantile(joined_words$Log_ratio, 0.90)
-mean <- mean(joined_words$Log_ratio)
+joined_words_non_zero <- joined_words[joined_words$n_public > 0 & joined_words$n_private > 0, ]
 
-ggplot(joined_words, aes(x = Log_ratio)) +
+lower_quantil <- quantile(joined_words_non_zero$Log_ratio, 0.10)
+upper_quantil <- quantile(joined_words_non_zero$Log_ratio, 0.90)
+mean <- mean(joined_words_non_zero$Log_ratio)
+
+ggplot(joined_words_non_zero, aes(x = Log_ratio)) +
   geom_histogram(
     binwidth = 0.5,
     fill = "#69b3a2",
@@ -674,44 +728,33 @@ ggplot(joined_words, aes(x = Log_ratio)) +
   ylab("Frequency")
 
 # Log likelihood
-
 # See: https://ucrel.lancs.ac.uk/llwizard.html
 # 95th percentile; 5% level; p < 0.05; critical value = 3.84
 # 99th percentile; 1% level; p < 0.01; critical value = 6.63
 # 99.9th percentile; 0.1% level; p < 0.001; critical value = 10.83
 # 99.99th percentile; 0.01% level; p < 0.0001; critical value = 15.13
 
-PPDs <-
-  subset(joined_words, Log_likelihood > 15.13 & over_underuse == 1)
-PPDs_adj <- PPDs[grepl("ADJ", PPDs$tag),]
-PPDs_adj <-
-  PPDs_adj[order(PPDs_adj$Log_ratio, decreasing = TRUE),] %>% top_n(100)
+joined_words_99_99 <- joined_words[joined_words$Log_likelihood > 15.13, ]
 
-PPDs_private <-
-  subset(joined_words, Log_likelihood > 15.13 & over_underuse == -1)
-PPDs_private_adj <- PPDs_private[grepl("ADJ", PPDs_private$tag),]
-PPDs_private_adj <-
-  PPDs_private_adj[order(PPDs_private_adj$Log_ratio, decreasing = TRUE),] %>% top_n(100)
+# Show via alpha parameter, 0 = transparent, 1 = opaque
+joined_words$alpha_public <- normalizer(joined_words$Log_ratio)
+joined_words$alpha_private <- normalizer(joined_words$Log_ratio * -1)
+# TODO: Decide whether significance level matters or how it can be depicted
 
-set.seed(1234)
-wordcloud(
-  words = PPDs_adj$lemma,
-  freq = abs(PPDs_adj$Log_ratio) * 1000,
-  max.words = 50,
-  random.order = FALSE,
-  colors = brewer.pal(8, "Dark2"),
-  rot.per = 0,
-  scale = c(1.2, 0.5)
-)
+public_ads_sample_raw_clusters <- public_ads_sample_raw_clusters %>%
+  left_join(
+    joined_words %>%
+      select(lemma, alpha_public)
+  )
 
-set.seed(1234)
-wordcloud(
-  words = PPDs_private_adj$lemma,
-  freq = abs(PPDs_private_adj$Log_ratio) * 1000,
-  max.words = 50,
-  random.order = FALSE,
-  colors = brewer.pal(8, "Dark2"),
-  rot.per = 0,
-  scale = c(1.2, 0.5)
-)
+private_ads_sample_raw_clusters <- private_ads_sample_raw_clusters %>%
+  left_join(
+    joined_words %>%
+      select(lemma, alpha_private)
+  )
+
+# ------------------------------- HMTL Output -------------------------------- #
+create_html_output(public_ads_sample_raw_clusters, "public", "Behörde", 10)
+
+create_html_output(private_ads_sample_raw_clusters, "private", "arbeitgeber", 10)
 
