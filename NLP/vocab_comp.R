@@ -429,7 +429,7 @@ create_html_output <- function(df, group, employer_column, n) {
     ), 1), unique(cluster_names))
   
   html_head <-
-    "<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody {\n  font-family: 'Arial', sans-serif;\n}\n</style>\n</head>\n\n<body>\n"
+    "<!DOCTYPE html>\n<html>\n<head>\n</head>\n\n<body>\n"
   
   html_foot <- "</body>\n</html>"
   
@@ -681,7 +681,9 @@ private_ads_sample_raw_clusters <- private_ads_sample_raw %>%
   left_join(private_cluster, by = c('lemma' = 'words'))
 
 # ------------------------------- Descriptives ------------------------------- #
-# TODO
+# Vorkommen der Cluster in den Stellenanzeigen
+
+# Reihenfolge der Cluster?
 
 # ----------------------------- Word differences ----------------------------- #
 joined_words <-
@@ -757,4 +759,3 @@ private_ads_sample_raw_clusters <- private_ads_sample_raw_clusters %>%
 create_html_output(public_ads_sample_raw_clusters, "public", "Behörde", 10)
 
 create_html_output(private_ads_sample_raw_clusters, "private", "arbeitgeber", 10)
-
