@@ -64,15 +64,15 @@ IDF_MIN_PERC <- 0.1
 
 # --------------------------------- Functions -------------------------------- #
 sample_first_n_ids <- function(vocab) {
+  vocab$tag <- gsub("\\(.+\\)", "", vocab$tag)
   unique_ids <- unique(vocab$ID)
   sampled_ids <- unique_ids[1:SAMPLE_SIZE]
-  return(vocab[vocab$ID %in% sampled_ids,])
+  return(vocab[vocab$ID %in% sampled_ids, ])
 }
 
 get_cleansed_vocab <- function(vocab, employer_column) {
   # Tag cleansing
   vocab <- na.omit(vocab)
-  vocab$tag <- gsub("\\(.+\\)", "", vocab$tag)
   # Group by 'lemma' and 'tag', then summarize
   vocab <- vocab %>%
     group_by(ID) %>%
@@ -193,15 +193,13 @@ concatenate_words <- function(x) {
 synonyms_distance_matrix <- function(v) {
   set.seed(1234)
   w2v_model <-
-    word2vec(
-      x = v,
-      type = "skip-gram",
-      iter = 10,
-    )
+    word2vec(x = v,
+             type = "skip-gram",
+             iter = 10,)
   word_embeddings_vec <- as.matrix(w2v_model)
   # Remove end-of-sentence token
   word_embeddings_vec <-
-    word_embeddings_vec[rownames(word_embeddings_vec) != "</s>",]
+    word_embeddings_vec[rownames(word_embeddings_vec) != "</s>", ]
   similarity_matrix_synonyms <-
     word2vec_similarity(word_embeddings_vec, word_embeddings_vec, type = "cosine")
   similarity_matrix_synonyms <-
@@ -319,7 +317,7 @@ cluster_labels <- function(distance_matrix, h) {
   
   bph <- branches_per_height(dend, k = 0.5)
   bph <- mutate(bph, agg = lag(branches) - branches)
-  bph[1,]$agg <- 0
+  bph[1, ]$agg <- 0
   bph$cum_agg <- cumsum(bph$agg)
   bph$cum_agg_n <- normalizer(bph$cum_agg)
   print(bph)
@@ -357,14 +355,12 @@ cluster_tagging <-
     
     set.seed(1234)
     w2v_model <-
-      word2vec(
-        x = cleansed_dataframe_source$text,
-        type = "skip-gram",
-        iter = 200
-      )
+      word2vec(x = cleansed_dataframe_source$text,
+               type = "skip-gram",
+               iter = 200)
     word_embeddings_vec <- as.matrix(w2v_model)
     word_embeddings_vec <-
-      word_embeddings_vec[rownames(word_embeddings_vec) != "</s>",]
+      word_embeddings_vec[rownames(word_embeddings_vec) != "</s>", ]
     similarity_matrix <-
       word2vec_similarity(word_embeddings_vec, word_embeddings_vec, type = "cosine")
     similarity_matrix <- normalizer(similarity_matrix)
@@ -377,7 +373,7 @@ cluster_tagging <-
     
     bph <- branches_per_height(dend, k = 0.2)
     bph <- mutate(bph, agg = lag(branches) - branches)
-    bph[1,]$agg <- 0
+    bph[1, ]$agg <- 0
     bph$cum_agg <- cumsum(bph$agg)
     bph$cum_agg_n <- normalizer(bph$cum_agg)
     print(bph)
@@ -453,30 +449,30 @@ create_html_output <- function(df, group, employer_column, n) {
       paste(lapply(seq_len(nrow(
         data
       )), function(i) {
-        ifelse(
-          is.na(data$cluster_name[i]),
+        if (is.na(data$cluster_name[i])) {
+          paste(data$word[i])
+        } else {
+          opacity <-
+            ifelse(is.na(data[[alpha_name]][i]), 0.4, 0.4 + 0.6 * data[[alpha_name]][i])
+          rgba_values <-
+            paste(as.vector(col2rgb(cluster_colors[data$cluster_name[i]])), collapse = ",")
+          word_style <-
+            ifelse(is.na(data[[alpha_name]][i]), "", "font-weight: bold;")
           paste(
-            "<span style='background-color: transparent;' title='Cluster: NA'>",
+            "<span style='background-color:rgba(",
+            rgba_values,
+            ",",
+            opacity,
+            ");",
+            word_style,
+            "' title='Cluster: ",
+            data$cluster_name[i],
+            "'>",
             data$word[i],
             "</span>",
             sep = ""
-          ),
-          paste(
-            paste(
-              "<span style='background-color:",
-              cluster_colors[data$cluster_name[i]],
-              "; opacity:", data[[alpha_name]][i],
-              ";",
-              ifelse(data[[alpha_name]][i] >= 0.8, "font-weight: bold;", ""),
-              "' title='Cluster: ",
-              data$cluster_name[i],
-              "'>",
-              data$word[i],
-              "</span>",
-              sep = ""
-            )
           )
-        )
+        }
       }),
       collapse = " "),
       "<hr>"
@@ -504,7 +500,7 @@ create_html_output <- function(df, group, employer_column, n) {
                        collapse = "<br>"))
   
   document_html_list <- lapply(unique(df$ID)[1:n], function(id) {
-    document_data <- df[df$ID == id, ]
+    document_data <- df[df$ID == id,]
     generate_document_html(document_data)
   })
   
@@ -517,18 +513,41 @@ create_html_output <- function(df, group, employer_column, n) {
   writeLines(final_html_string, output_file)
 }
 
-log_likelihood <- function(n_public, n_private, E_public, E_private) {
-  result <- 2 * ((n_public * ifelse(n_public == 0 | E_public == 0, 0, log(n_public/E_public))) + 
-                   (n_private * ifelse(n_private == 0 | E_private == 0, 0, log(n_private/E_private))))
-  return(result)
-}
+log_likelihood <-
+  function(n_public, n_private, E_public, E_private) {
+    result <-
+      2 * ((n_public * ifelse(
+        n_public == 0 | E_public == 0, 0, log(n_public / E_public)
+      )) +
+        (n_private * ifelse(
+          n_private == 0 | E_private == 0, 0, log(n_private / E_private)
+        )))
+    return(result)
+  }
 
-log_ratio <- function(norm_public, public_total_words, private_total_words, norm_private) {
-  zero_frequency <- 0.5
-  result <- log2((ifelse(norm_public == 0, zero_frequency/public_total_words, norm_public)) / 
-                  (ifelse(norm_private == 0, zero_frequency/private_total_words, norm_private)))
-  return(result)
-}
+log_ratio <-
+  function(norm_public,
+           public_total_words,
+           private_total_words,
+           norm_private) {
+    zero_frequency <- 0.5
+    result <-
+      log2((
+        ifelse(
+          norm_public == 0,
+          zero_frequency / public_total_words,
+          norm_public
+        )
+      ) /
+        (
+          ifelse(
+            norm_private == 0,
+            zero_frequency / private_total_words,
+            norm_private
+          )
+        ))
+    return(result)
+  }
 
 # ------------------------ Load datasets and sampling ------------------------ #
 # Public
@@ -617,7 +636,9 @@ private_distance_matrix_phonetic <-
 public_distance_matrix_thesaurus <-
   thesaurus_distance_matrix(unique_words_public$lemma, group = "public", load = TRUE)
 private_distance_matrix_thesaurus <-
-  thesaurus_distance_matrix(unique_words_private$lemma, group = "private", load = TRUE)
+  thesaurus_distance_matrix(unique_words_private$lemma,
+                            group = "private",
+                            load = TRUE)
 
 # Addition of matrices, add weights in results getting better
 public_combined_distance_matrix <- add_matrices(
@@ -655,18 +676,32 @@ private_cluster <-
 # ---------------------------- Corpora comparison ---------------------------- #
 # After manual inspection, assign names for clusters
 
-public_cluster_names <- c("Requirements", "Tasks", "Conditions", "Company", "Requirements", "Company", "Application")
-private_cluster_names <- c("Tasks", "Requirements", "Conditions", "Company", "Tasks", "Application", "Conditions")
+public_cluster_names <-
+  c(
+    "Requirements",
+    "Tasks",
+    "Conditions",
+    "Company",
+    "Requirements",
+    "Company",
+    "Application"
+  )
+private_cluster_names <-
+  c(
+    "Tasks",
+    "Requirements",
+    "Conditions",
+    "Company",
+    "Tasks",
+    "Application",
+    "Conditions"
+  )
 
-public_cluster_names <- data.frame(
-  cluster_nr = unique(public_cluster$cluster),
-  cluster_name = public_cluster_names
-)
+public_cluster_names <- data.frame(cluster_nr = unique(public_cluster$cluster),
+                                   cluster_name = public_cluster_names)
 
-private_cluster_names <- data.frame(
-  cluster_nr = unique(private_cluster$cluster),
-  cluster_name = private_cluster_names
-)
+private_cluster_names <- data.frame(cluster_nr = unique(private_cluster$cluster),
+                                    cluster_name = private_cluster_names)
 
 public_cluster <- public_cluster %>%
   left_join(public_cluster_names, by = c('cluster' = 'cluster_nr'))
@@ -696,21 +731,34 @@ joined_words <-
 joined_words[is.na(joined_words)] <- 0
 
 joined_words <- joined_words %>%
-  mutate(over_underuse = ifelse(n_public > n_private, 1,-1)) %>%
+  mutate(over_underuse = ifelse(n_public > n_private, 1, -1)) %>%
   mutate(E_public = public_total_words * (n_public + n_private) / (public_total_words + private_total_words)) %>%
   mutate(E_private = private_total_words * (n_public + n_private) / (public_total_words + private_total_words)) %>%
   mutate(norm_public = n_public / public_total_words) %>%
   mutate(norm_private = n_private / private_total_words) %>%
   mutate(Log_likelihood = log_likelihood(n_public, n_private, E_public, E_private)) %>%
-  mutate(Log_ratio = log_ratio(norm_public, public_total_words, private_total_words, norm_private))
+  mutate(Log_ratio = log_ratio(
+    norm_public,
+    public_total_words,
+    private_total_words,
+    norm_private
+  ))
 
-joined_words_non_zero <- joined_words[joined_words$n_public > 0 & joined_words$n_private > 0, ]
+# Log likelihood
+# See: https://ucrel.lancs.ac.uk/llwizard.html
+# 95th percentile; 5% level; p < 0.05; critical value = 3.84
+# 99th percentile; 1% level; p < 0.01; critical value = 6.63
+# 99.9th percentile; 0.1% level; p < 0.001; critical value = 10.83
+# 99.99th percentile; 0.01% level; p < 0.0001; critical value = 15.13
 
-lower_quantil <- quantile(joined_words_non_zero$Log_ratio, 0.10)
-upper_quantil <- quantile(joined_words_non_zero$Log_ratio, 0.90)
-mean <- mean(joined_words_non_zero$Log_ratio)
+joined_words_99_99 <-
+  joined_words[joined_words$Log_likelihood > 15.13,]
 
-ggplot(joined_words_non_zero, aes(x = Log_ratio)) +
+lower_quantil <- quantile(joined_words_99_99$Log_ratio, 0.20)
+upper_quantil <- quantile(joined_words_99_99$Log_ratio, 0.80)
+mean <- mean(joined_words_99_99$Log_ratio)
+
+ggplot(joined_words_99_99, aes(x = Log_ratio)) +
   geom_histogram(
     binwidth = 0.5,
     fill = "#69b3a2",
@@ -729,31 +777,26 @@ ggplot(joined_words_non_zero, aes(x = Log_ratio)) +
   xlab("Log ratio of the relative keyword frequencies (negative = private, positive = public)") +
   ylab("Frequency")
 
-# Log likelihood
-# See: https://ucrel.lancs.ac.uk/llwizard.html
-# 95th percentile; 5% level; p < 0.05; critical value = 3.84
-# 99th percentile; 1% level; p < 0.01; critical value = 6.63
-# 99.9th percentile; 0.1% level; p < 0.001; critical value = 10.83
-# 99.99th percentile; 0.01% level; p < 0.0001; critical value = 15.13
-
-joined_words_99_99 <- joined_words[joined_words$Log_likelihood > 15.13, ]
+# TODO: No effect size filter?
 
 # Show via alpha parameter, 0 = transparent, 1 = opaque
-joined_words$alpha_public <- normalizer(joined_words$Log_ratio)
-joined_words$alpha_private <- normalizer(joined_words$Log_ratio * -1)
-# TODO: Decide whether significance level matters or how it can be depicted
+joined_words_99_99$alpha_public <-
+  normalizer(joined_words_99_99$Log_ratio)
+joined_words_99_99$alpha_private <-
+  normalizer(joined_words_99_99$Log_ratio * -1)
 
 public_ads_sample_raw_clusters <- public_ads_sample_raw_clusters %>%
-  left_join(
-    joined_words %>%
-      select(lemma, alpha_public)
-  )
+  left_join(joined_words_99_99 %>%
+              select(lemma, alpha_public))
 
-private_ads_sample_raw_clusters <- private_ads_sample_raw_clusters %>%
-  left_join(
-    joined_words %>%
-      select(lemma, alpha_private)
-  )
+private_ads_sample_raw_clusters <-
+  private_ads_sample_raw_clusters %>%
+  left_join(joined_words_99_99 %>%
+              select(lemma, alpha_private))
+
+# For testing purposes, only highlight ADJ
+# public_ads_sample_raw_clusters$alpha_public[!is.na(public_ads_sample_raw_clusters$alpha_public) & public_ads_sample_raw_clusters$tag != "ADJ"] <- NA
+# private_ads_sample_raw_clusters$alpha_private[!is.na(private_ads_sample_raw_clusters$alpha_private) & private_ads_sample_raw_clusters$tag != "ADJ"] <- NA
 
 # ------------------------------- HMTL Output -------------------------------- #
 create_html_output(public_ads_sample_raw_clusters, "public", "Behörde", 10)
