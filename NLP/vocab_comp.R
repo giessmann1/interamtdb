@@ -43,18 +43,23 @@ options(scipen = 999)
 SAMPLE_SIZE <- 500
 WORDS_BY_EMPLOYER_MIN <- 1
 LETTERS_PER_WORD_MIN <- 3
-PUBLIC_ADS_FILE <- "public_ads.csv"
-PRIVATE_ADS_FILE <- "private_ads.csv"
+PUBLIC_ADS_FILE <- "input/public_ads.csv"
+PRIVATE_ADS_FILE <- "input/private_ads.csv"
 MIN_WORDS <- 4 # see word2vec min_count
 MIN_WORD_BY_ID <- 50
 IDF_MIN_PERC <- 0.1
+CUSTOM_STOPWORD_FILE <- "input/custom_stopwods.csv"
 
 # --------------------------------- Functions -------------------------------- #
 sample_first_n_ids <- function(vocab) {
-  vocab$tag <- gsub("\\(.+\\)", "", vocab$tag)
   unique_ids <- unique(vocab$ID)
   sampled_ids <- unique_ids[1:SAMPLE_SIZE]
-  return(vocab[vocab$ID %in% sampled_ids,])
+  sampled_vocab <- vocab[vocab$ID %in% sampled_ids,]
+  sampled_vocab$tag <- gsub("\\(.+\\)", "", sampled_vocab$tag)
+  # Remove custom stopwords
+  custom_stopwords <- as.vector(read.csv(CUSTOM_STOPWORD_FILE, header = FALSE))
+  sampled_vocab$lemma[sampled_vocab$lemma %in% custom_stopwords] <- NA
+  return(sampled_vocab)
 }
 
 get_cleansed_vocab <- function(vocab, employer_column) {
@@ -210,7 +215,7 @@ thesaurus_distance_matrix <- function(unique_words, group, load) {
   if (load == TRUE) {
     cat("Load", group, "thesaurus from local file...", "\n")
     associated_words_list <-
-      readRDS(paste("thesaurus_", group, "_words.rds", sep = ""))
+      readRDS(paste("input/thesaurus_", group, "_words.rds", sep = ""))
   } else {
     cat("Gather", group, "thesaurus from online source...", "\n")
     for (i in seq_along(unique_words)) {
@@ -223,7 +228,7 @@ thesaurus_distance_matrix <- function(unique_words, group, load) {
       cat(i, "of", length(unique_words), "\n")
     }
     saveRDS(associated_words_list,
-            file = paste("thesaurus_", group, "_words.rds", sep = ""))
+            file = paste("inputs/thesaurus_", group, "_words.rds", sep = ""))
   }
   
   associated_words_list_cleansed <-
@@ -392,7 +397,7 @@ cluster_tagging <-
                   values_fn = list) %>%
       select(-row_id)
     
-    write.xlsx(export, paste(group, "_cluster", ".xlsx", sep = ""), keepNA = TRUE)
+    write.xlsx(export, paste("output/", group, "_cluster", ".xlsx", sep = ""), keepNA = TRUE)
     return(clusters_df)
   }
 
@@ -496,7 +501,7 @@ create_html_output <- function(df, group, employer_column, n) {
   
   final_html_string <- paste(final_html, collapse = "\n")
   
-  output_file <- paste("html_output_", group, ".html", sep = "")
+  output_file <- paste("output/html_output_", group, ".html", sep = "")
   writeLines(final_html_string, output_file)
 }
 
@@ -654,14 +659,14 @@ public_labels_df <-
   cluster_labels(public_combined_distance_matrix, 8.5)
 
 # Export csv for human-adjustments
-write.csv(public_labels_df, "public_labels.csv", row.names = FALSE, quote = FALSE)
-public_labels_df <- read.csv("public_labels.csv", header = TRUE, sep = ",") 
+write.csv(public_labels_df, "input/public_labels.csv", row.names = FALSE, quote = FALSE)
+public_labels_df <- read.csv("input/public_labels.csv", header = TRUE, sep = ",") 
 
 private_labels_df <-
   cluster_labels(private_combined_distance_matrix, 6.3)
 
-write.csv(private_labels_df, "private_labels.csv", row.names = FALSE, quote = FALSE)
-private_labels_df <- read.csv("private_labels.csv", header = TRUE, sep = ",") 
+write.csv(private_labels_df, "input/private_labels.csv", row.names = FALSE, quote = FALSE)
+private_labels_df <- read.csv("input/private_labels.csv", header = TRUE, sep = ",") 
 
 # --------- Label replacement and Cluster Extraction using Word2Vec ---------- #
 public_ads_cleansed_labels <- public_ads_cleansed %>%
@@ -674,14 +679,14 @@ public_cluster <-
   cluster_tagging(public_ads_cleansed_labels, public_labels_df, "public", 2.3)
 
 # Export csv for human-adjustments
-write.csv(public_cluster, "public_cluster.csv", row.names = FALSE, quote = FALSE)
-public_cluster <- read.csv("public_cluster.csv", header = TRUE, sep = ",") 
+write.csv(public_cluster, "input/public_cluster.csv", row.names = FALSE, quote = FALSE)
+public_cluster <- read.csv("input/public_cluster.csv", header = TRUE, sep = ",") 
 
 private_cluster <-
   cluster_tagging(private_ads_cleansed_labels, private_labels_df, "private", 2)
 
-write.csv(private_cluster, "private_cluster.csv", row.names = FALSE, quote = FALSE)
-private_cluster <- read.csv("private_cluster.csv", header = TRUE, sep = ",") 
+write.csv(private_cluster, "input/private_cluster.csv", row.names = FALSE, quote = FALSE)
+private_cluster <- read.csv("input/private_cluster.csv", header = TRUE, sep = ",") 
 
 # ---------------------------- Corpora comparison ---------------------------- #
 # After manual inspection, assign names for clusters
