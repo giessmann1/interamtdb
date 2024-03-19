@@ -164,15 +164,8 @@ cython_debug/
 interamtdb-data/
 geckodriver.log
 scraper-log.txt
-temp.html
-private_ads.csv
-public_ads.csv
-thesaurus_private_words.rds
-thesaurus_public_words.rds
-*.pdf
-*.html
-*.csv
-*.xlsx
+inputs/
+outputs/
 
 # R
 *.Rapp.history
