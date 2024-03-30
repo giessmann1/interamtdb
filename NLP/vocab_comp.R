@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------- #
-#           Vocabulary comparsion between public and private job ads           #
+#           Vocabulary comparison between public and private job ads           #
 #                                                                              #
 #                     (c) Nico Gießmann, MA thesis, 2023-24                    #
 # ---------------------------------------------------------------------------- #
@@ -14,19 +14,11 @@ library(udpipe)
 library(textplot)
 library(uwot)
 library(ggrepel)
-library(hrbrthemes)
-library(ggalt)
-library(data.table)
 library(stringr)
 library(proxy)
 library(reshape2)
 library(cluster)
 library(dendextend)
-library(ggraph)
-library(igraph)
-library(colormap)
-library(ape)
-library(circlize)
 library(ggdendro)
 library(stringdist)
 library(httr)
@@ -34,7 +26,6 @@ library(xml2)
 library(openxlsx)
 library(purrr)
 library(htmltools)
-library(qdapDictionaries)
 
 # --------------------------------- Settings --------------------------------- #
 setwd("~/interamtdb/NLP")
@@ -47,22 +38,47 @@ LETTERS_PER_WORD_MIN <- 3
 PUBLIC_ADS_FILE <- "input/public_ads.csv"
 PRIVATE_ADS_FILE <- "input/private_ads.csv"
 MIN_WORDS <- 4 # see word2vec min_count
-MIN_WORD_BY_ID <- 50
+MIN_WORD_BY_ID <- 100
 IDF_MIN_PERC <- 0.1
-CUSTOM_STOPWORD_FILE <- "input/custom_stopwords.csv"
+WORDS_BLACKLIST_FILE <- "input/words_blacklist.csv"
+WORDS_WHITELIST_FILE <- "input/words_whitelist.csv"
 
 # --------------------------------- Functions -------------------------------- #
+english_exclusive_words <- function() {
+  # Dictionary reference:
+  # D. Goldhahn, T. Eckart & U. Quasthoff: Building Large Monolingual Dictionaries at the Leipzig Corpora Collection: From 100 to 200 Languages.
+  # In: Proceedings of the 8th International Language Resources and Evaluation (LREC'12), 2012
+  english_words <- read.csv("input/eng_news_2023_30K-words.txt", header = FALSE, sep = "\t")
+  english_words <- english_words %>%
+    mutate(V2 = str_replace_all(tolower(V2), "[^a-zäöüÄÖÜß]", "")) %>%
+    filter(nchar(V2) > 1) %>%
+    unique()
+  english_words <- english_words$V2
+  
+  german_words <- read.csv("input/deu_news_2023_30K-words.txt", header = FALSE, sep = "\t")
+  german_words <- german_words %>%
+    mutate(V2 = str_replace_all(tolower(V2), "[^a-zäöüÄÖÜß]", "")) %>%
+    filter(nchar(V2) > 1) %>%
+    unique()
+  german_words <- german_words$V2
+  
+  return(setdiff(english_words, german_words))
+}
+  
 sample_first_n_ids <- function(vocab) {
   unique_ids <- unique(vocab$ID)
   sampled_ids <- unique_ids[1:min(SAMPLE_SIZE, length(unique_ids))]
   sampled_vocab <- vocab[vocab$ID %in% sampled_ids,]
   sampled_vocab$tag <- gsub("\\(.+\\)", "", sampled_vocab$tag)
-  # Remove custom stopwords
-  custom_stopwords <- as.vector(read.csv(CUSTOM_STOPWORD_FILE, header = FALSE))$V1
-  sampled_vocab[sampled_vocab$lemma %in% custom_stopwords, ]$lemma <- NA
+  # Remove blacklist words
+  blacklist <- as.vector(read.csv(WORDS_BLACKLIST_FILE, header = FALSE))$V1
+  sampled_vocab[sampled_vocab$lemma %in% blacklist, ]$lemma <- NA
   # English words, this should exclude typical English words,
-  # without influencing technical terms
-  sampled_vocab[sampled_vocab$lemma %in%  GradyAugmented, ]$lemma <- NA
+  # without influencing technical terms (whitelist)
+  whitelist <- as.vector(read.csv(WORDS_WHITELIST_FILE, header = FALSE))$V1
+  excl_eng_words <- setdiff(english_exclusive_words(), whitelist)
+  sampled_vocab[sampled_vocab$lemma %in% excl_eng_words, ]$lemma <- NA
+
   return(sampled_vocab)
 }
 
@@ -232,7 +248,7 @@ thesaurus_distance_matrix <- function(unique_words, group, load) {
       cat(i, "of", length(unique_words), "\n")
     }
     saveRDS(associated_words_list,
-            file = paste("inputs/thesaurus_", group, "_words.rds", sep = ""))
+            file = paste("input/thesaurus_", group, "_words.rds", sep = ""))
   }
   
   associated_words_list_cleansed <-
@@ -305,7 +321,7 @@ order_matrix <- function(m) {
   return(matrix_ordered)
 }
 
-cluster_labels <- function(distance_matrix, h) {
+cluster_labels_dend <- function(distance_matrix) {
   dend <- distance_matrix %>%
     dist() %>%
     hclust(method = "average") %>%
@@ -318,6 +334,10 @@ cluster_labels <- function(distance_matrix, h) {
   bph$cum_agg_n <- normalizer(bph$cum_agg)
   print(bph)
   
+  return(dend)
+}
+
+cluster_labels_df <- function(dend, h) {
   dendlist <- cut(dend, h)
   
   my_labels <- list()
@@ -336,8 +356,7 @@ cluster_labels <- function(distance_matrix, h) {
   return(my_labels_df)
 }
 
-cluster_tagging <-
-  function(cleansed_dataframe, labels_df, group, h) {
+cluster_tagging_dend <- function(cleansed_dataframe, labels_df) {
     cleansed_dataframe_source <- cleansed_dataframe %>%
       ungroup() %>%
       select(ID, sentence_index, label) %>%
@@ -374,6 +393,10 @@ cluster_tagging <-
     bph$cum_agg_n <- normalizer(bph$cum_agg)
     print(bph)
     
+    return(dend)
+}
+    
+cluster_tagging_df <- function(dend, labels_df, group, h) {
     dendlist <- cut(dend, h)
     
     clusters <- list()
@@ -413,16 +436,13 @@ create_html_output <- function(df, group, employer_column, n) {
     )
   }
   
-  cluster_names <-
-    c(sort(as.character(unique(df$cluster_name[df$cluster_name != "NA"]))), "NA")
+  cluster_names <- c(sort(as.character(unique(df$cluster_name[df$cluster_name != "NA"]))), "NA")
   
-  cluster_colors <-
-    setNames(alpha(hcl(
-      seq(15, 375, length.out = n_distinct(cluster_names)), 80, 80
-    ), 1), unique(cluster_names))
+  cluster_colors <- setNames(alpha(hcl(
+    seq(15, 375, length.out = n_distinct(cluster_names)), 80, 80
+  ), 1), unique(cluster_names))
   
-  html_head <-
-    "<!DOCTYPE html>\n<html>\n<head>\n</head>\n\n<body>\n"
+  html_head <- "<!DOCTYPE html>\n<html>\n<head>\n</head>\n\n<body>\n"
   
   html_foot <- "</body>\n</html>"
   
@@ -440,21 +460,19 @@ create_html_output <- function(df, group, employer_column, n) {
         employer_column,
         ": ",
         data[[employer_column]][1],
-        "</h3>",
+        "<span style='color: red;'>",
+        " (Signaling Value: ",
+        data$signaling_value[1],
+        ")</span></h3>",
         sep = ""
       ),
-      paste(lapply(seq_len(nrow(
-        data
-      )), function(i) {
+      paste(lapply(seq_len(nrow(data)), function(i) {
         if (is.na(data$cluster_name[i])) {
           paste(data$word[i])
         } else {
-          opacity <-
-            ifelse(is.na(data[[alpha_name]][i]), 0.4, 0.4 + 0.6 * data[[alpha_name]][i])
-          rgba_values <-
-            paste(as.vector(col2rgb(cluster_colors[data$cluster_name[i]])), collapse = ",")
-          word_style <-
-            ifelse(is.na(data[[alpha_name]][i]), "", "font-weight: bold;")
+          opacity <- ifelse(is.na(data[[alpha_name]][i]), 0.4, 0.4 + 0.6 * data[[alpha_name]][i])
+          rgba_values <- paste(as.vector(col2rgb(cluster_colors[data$cluster_name[i]])), collapse = ",")
+          word_style <- ifelse(is.na(data[[alpha_name]][i]), "", "font-weight: bold;")
           paste(
             "<span style='background-color:rgba(",
             rgba_values,
@@ -501,8 +519,7 @@ create_html_output <- function(df, group, employer_column, n) {
     generate_document_html(document_data)
   })
   
-  final_html <-
-    c(html_head, legend_html, document_html_list, html_foot)
+  final_html <- c(html_head, legend_html, document_html_list, html_foot)
   
   final_html_string <- paste(final_html, collapse = "\n")
   
@@ -622,6 +639,7 @@ rbind(temp_public, temp_private) %>%
   geom_line(alpha = 0.8) +
   scale_x_log10() +
   scale_y_log10()
+ggsave("output/zipfs_law.pdf", width = 12, height = 8, units = "cm", dpi = "print")
 
 rm(temp_public, temp_private)
 
@@ -640,13 +658,13 @@ private_distance_matrix_phonetic <-
 
 # Thesaurus relationship
 public_distance_matrix_thesaurus <-
-  thesaurus_distance_matrix(unique_words_public$lemma, group = "public", load = TRUE)
+  thesaurus_distance_matrix(unique_words_public$lemma, group = "public", load = FALSE)
 private_distance_matrix_thesaurus <-
   thesaurus_distance_matrix(unique_words_private$lemma,
                             group = "private",
-                            load = TRUE)
+                            load = FALSE)
 
-# Addition of matrices, add weights in results getting better
+# Addition of matrices, add weights if results getting better
 public_combined_distance_matrix <- add_matrices(
   public_distance_matrix_synonyms,
   public_distance_matrix_phonetic,
@@ -660,15 +678,16 @@ private_combined_distance_matrix <- add_matrices(
 )
 
 # Label clustering, adjust h value based on coherent results
-public_labels_df <-
-  cluster_labels(public_combined_distance_matrix, 8.5)
+dend_labels_public <- cluster_labels_dend(public_combined_distance_matrix)
+public_labels_df <- cluster_labels_df(dend_labels_public, 13)
 
 # Export csv for human-adjustments
 write.csv(public_labels_df, "input/public_labels.csv", row.names = FALSE, quote = FALSE)
-public_labels_df <- read.csv("input/public_labels.csv", header = TRUE, sep = ",") 
+public_labels_df <- read.csv("input/public_labels.csv", header = TRUE, sep = ",")
 
-private_labels_df <-
-  cluster_labels(private_combined_distance_matrix, 6.3)
+
+dend_labels_private <- cluster_labels_dend(private_combined_distance_matrix)
+private_labels_df <- cluster_labels_df(dend_labels_private, 11.5)
 
 write.csv(private_labels_df, "input/private_labels.csv", row.names = FALSE, quote = FALSE)
 private_labels_df <- read.csv("input/private_labels.csv", header = TRUE, sep = ",") 
@@ -680,15 +699,15 @@ public_ads_cleansed_labels <- public_ads_cleansed %>%
 private_ads_cleansed_labels <- private_ads_cleansed %>%
   left_join(private_labels_df, by = c('lemma' = 'words'))
 
-public_cluster <-
-  cluster_tagging(public_ads_cleansed_labels, public_labels_df, "public", 2.3)
+public_cluster_dend <- cluster_tagging_dend(public_ads_cleansed_labels, public_labels_df)
+public_cluster <- cluster_tagging_df(public_cluster_dend, public_labels_df, "public", 2.88)
 
 # Export csv for human-adjustments
 write.csv(public_cluster, "input/public_cluster.csv", row.names = FALSE, quote = FALSE)
 public_cluster <- read.csv("input/public_cluster.csv", header = TRUE, sep = ",") 
 
-private_cluster <-
-  cluster_tagging(private_ads_cleansed_labels, private_labels_df, "private", 2)
+private_cluster_dend <- cluster_tagging_dend(private_ads_cleansed_labels, private_labels_df)
+private_cluster <- cluster_tagging_df(private_cluster_dend, private_labels_df, "private", 2.73)
 
 write.csv(private_cluster, "input/private_cluster.csv", row.names = FALSE, quote = FALSE)
 private_cluster <- read.csv("input/private_cluster.csv", header = TRUE, sep = ",") 
@@ -698,23 +717,42 @@ private_cluster <- read.csv("input/private_cluster.csv", header = TRUE, sep = ",
 
 public_cluster_names <-
   c(
+    "Application",
+    "Requirements",
+    "Conditions",
+    "Conditions",
+    "Requirements",
     "Requirements",
     "Tasks",
-    "Conditions",
-    "Company",
-    "Requirements",
-    "Company",
-    "Application"
+    "Tasks",
+    "Company"
   )
+
 private_cluster_names <-
   c(
-    "Tasks",
     "Requirements",
+    "Requirements",
+    "Tasks",
+    "Tasks",
+    "Company",
+    "Company",
     "Conditions",
+    "Application",
+    "Company",
+    "Tasks",
+    "Company",
+    "Requirements",
+    "Company",
     "Company",
     "Tasks",
     "Application",
-    "Conditions"
+    "Requirements",
+    "Tasks",
+    "Company",
+    "Tasks",
+    "Tasks",
+    "Tasks",
+    "Company"
   )
 
 public_cluster_names <-
@@ -782,8 +820,8 @@ joined_words[is.na(joined_words)] <- 0
 
 joined_words <- joined_words %>%
   mutate(over_underuse = ifelse(n_public > n_private, 1,-1)) %>%
-  mutate(E_public = public_total_words * (n_public + n_private) / (public_total_words + private_total_words)) %>%
-  mutate(E_private = private_total_words * (n_public + n_private) / (public_total_words + private_total_words)) %>%
+  mutate(E_public = as.numeric(public_total_words) * (n_public + n_private) / (public_total_words + private_total_words)) %>%
+  mutate(E_private = as.numeric(private_total_words) * (n_public + n_private) / (public_total_words + private_total_words)) %>%
   mutate(norm_public = n_public / public_total_words) %>%
   mutate(norm_private = n_private / private_total_words) %>%
   mutate(Log_likelihood = log_likelihood(n_public, n_private, E_public, E_private)) %>%
@@ -832,23 +870,39 @@ ggplot(joined_words_99_99, aes(x = Log_ratio)) +
 # Show via alpha parameter, 0 = transparent, 1 = opaque
 joined_words_99_99$alpha_public <-
   normalizer(joined_words_99_99$Log_ratio)
+
 joined_words_99_99$alpha_private <-
   normalizer(joined_words_99_99$Log_ratio * -1)
 
+public_signaling_values <- public_ads_cleansed %>%
+  left_join(joined_words_99_99 %>% select(lemma, Log_ratio)) %>%
+  group_by(ID) %>%
+  summarise(signaling_value = round(sum(Log_ratio, na.rm = TRUE) / first(words_in_id), digits = 3))
+
 public_ads_sample_raw_clusters <- public_ads_sample_raw_clusters %>%
-  left_join(joined_words_99_99 %>%
-              select(lemma, alpha_public))
+  left_join(joined_words_99_99 %>% select(lemma, alpha_public)) %>%
+  left_join(public_signaling_values)
 
-private_ads_sample_raw_clusters <-
-  private_ads_sample_raw_clusters %>%
-  left_join(joined_words_99_99 %>%
-              select(lemma, alpha_private))
+private_signaling_values <- private_ads_cleansed %>%
+  left_join(joined_words_99_99 %>% select(lemma, Log_ratio)) %>%
+  group_by(ID) %>%
+  summarise(signaling_value = round(sum(Log_ratio, na.rm = TRUE) / first(words_in_id), digits = 3))
 
-# For testing purposes, only highlight ADJ
-# public_ads_sample_raw_clusters$alpha_public[!is.na(public_ads_sample_raw_clusters$alpha_public) & public_ads_sample_raw_clusters$tag != "ADJ"] <- NA
-# private_ads_sample_raw_clusters$alpha_private[!is.na(private_ads_sample_raw_clusters$alpha_private) & private_ads_sample_raw_clusters$tag != "ADJ"] <- NA
+private_ads_sample_raw_clusters <- private_ads_sample_raw_clusters %>%
+  left_join(joined_words_99_99 %>% select(lemma, alpha_private)) %>%
+  left_join(private_signaling_values)
 
 # ------------------------------- HMTL Output -------------------------------- #
-create_html_output(public_ads_sample_raw_clusters, "public", "Behörde", 10)
+public_ads_sample_raw_clusters_sorted <- public_ads_sample_raw_clusters %>%
+  group_by(ID, signaling_value) %>%
+  arrange(desc(signaling_value)) %>%
+  ungroup()
 
-create_html_output(private_ads_sample_raw_clusters, "private", "arbeitgeber", 10)
+create_html_output(public_ads_sample_raw_clusters_sorted, "public", "Behörde", 50)
+
+private_ads_sample_raw_clusters_sorted <- private_ads_sample_raw_clusters %>%
+  group_by(ID, signaling_value) %>%
+  arrange(signaling_value) %>%
+  ungroup()
+
+create_html_output(private_ads_sample_raw_clusters_sorted, "private", "arbeitgeber", 50)
