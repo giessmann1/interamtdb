@@ -429,6 +429,16 @@ cluster_tagging_df <- function(dend, labels_df, group, h) {
     return(clusters_df)
   }
 
+whitespace_after_needed <- function(word, word_after, word_before) {
+  no_space_before <- c(".", ",", ";", ":", "!", "?", ")", "]", "-", "/", "\\", "\\n", "<br>", NA)
+  no_space_after <- c("(", "[", "\\n", "<br>")
+  
+  if (word_after %in% no_space_before | word %in% no_space_after) {
+    return(FALSE)
+  }
+  return(TRUE)
+}
+
 create_html_output <- function(df, group, employer_column, n) {
   if (n > length(unique(df$ID))) {
     print(
@@ -468,7 +478,13 @@ create_html_output <- function(df, group, employer_column, n) {
       ),
       paste(lapply(seq_len(nrow(data)), function(i) {
         if (is.na(data$cluster_name[i])) {
-          paste(data$word[i])
+          paste(
+            "<span>",
+            data$word[i],
+            "</span>",
+            ifelse(whitespace_after_needed(data$word[i], ifelse(i == nrow(data), NA, data$word[i + 1]),  ifelse(i == 1, NA, data$word[i - 1])), "&nbsp;", ""),
+            sep = ""
+          )
         } else {
           opacity <- ifelse(is.na(data[[alpha_name]][i]), 0.4, 0.4 + 0.6 * data[[alpha_name]][i])
           rgba_values <- paste(as.vector(col2rgb(cluster_colors[data$cluster_name[i]])), collapse = ",")
@@ -485,11 +501,12 @@ create_html_output <- function(df, group, employer_column, n) {
             "'>",
             data$word[i],
             "</span>",
+            ifelse(whitespace_after_needed(data$word[i], ifelse(i == nrow(data), NA, data$word[i + 1]),  ifelse(i == 1, NA, data$word[i - 1])), "&nbsp;", ""),
             sep = ""
           )
         }
       }),
-      collapse = " "),
+      collapse = ""),
       "<hr>"
     )
     
@@ -830,7 +847,8 @@ joined_words <- joined_words %>%
     public_total_words,
     private_total_words,
     norm_private
-  ))
+  )) %>%
+  mutate(Cohens_d = Log_ratio * sqrt(3) / pi)
 
 # Log likelihood
 # See: https://ucrel.lancs.ac.uk/llwizard.html
@@ -842,54 +860,36 @@ joined_words <- joined_words %>%
 joined_words_99_99 <-
   joined_words[joined_words$Log_likelihood > 15.13, ]
 
-lower_quantil <- quantile(joined_words_99_99$Log_ratio, 0.20)
-upper_quantil <- quantile(joined_words_99_99$Log_ratio, 0.80)
-mean <- mean(joined_words_99_99$Log_ratio)
+# Effect size filter
+# See: Cohen, J. (1988). Statistical power analysis for the behavioral sciences (2nd ed). Hillsdale, N.J: L. Erlbaum Associates.
+# No effect; |d| < 0.2
+# Small effect; 0.2 <= |d| < 0.5
+# Medium effect; 0.5 <= |d| < 0.8
+# Large effect; |d| >= 0.8
 
-ggplot(joined_words_99_99, aes(x = Log_ratio)) +
-  geom_histogram(
-    binwidth = 0.5,
-    fill = "#69b3a2",
-    color = "white",
-    alpha = 0.9
-  ) +
-  geom_vline(xintercept = lower_quantil, linetype = "dashed") +
-  geom_vline(xintercept = upper_quantil, linetype = "dashed") +
-  geom_vline(xintercept = mean, color = "red") +
-  geom_text(aes(
-    x = mean,
-    label = round(mean, digits = 2),
-    y = 100
-  ), color = "red") +
-  theme_light() +
-  xlab("Log ratio of the relative keyword frequencies (negative = private, positive = public)") +
-  ylab("Frequency")
-
-# TODO: No effect size filter?
+joined_words_99_99_large_effect <- joined_words_99_99[abs(joined_words_99_99$Cohens_d) >= 0.8, ]
 
 # Show via alpha parameter, 0 = transparent, 1 = opaque
-joined_words_99_99$alpha_public <-
-  normalizer(joined_words_99_99$Log_ratio)
-
-joined_words_99_99$alpha_private <-
-  normalizer(joined_words_99_99$Log_ratio * -1)
+joined_words_99_99_large_effect <- joined_words_99_99_large_effect %>%
+  mutate(alpha_public = if_else(over_underuse == 1, normalizer(Cohens_d), NA)) %>%
+  mutate(alpha_private = if_else(over_underuse == -1, normalizer(-Cohens_d), NA))
 
 public_signaling_values <- public_ads_cleansed %>%
-  left_join(joined_words_99_99 %>% select(lemma, Log_ratio)) %>%
+  left_join(joined_words_99_99_large_effect %>% select(lemma, Cohens_d)) %>%
   group_by(ID) %>%
-  summarise(signaling_value = round(sum(Log_ratio, na.rm = TRUE) / first(words_in_id), digits = 3))
+  summarise(signaling_value = round(sum(Cohens_d, na.rm = TRUE) / first(words_in_id), digits = 3))
 
 public_ads_sample_raw_clusters <- public_ads_sample_raw_clusters %>%
-  left_join(joined_words_99_99 %>% select(lemma, alpha_public)) %>%
+  left_join(joined_words_99_99_large_effect %>% select(lemma, alpha_public)) %>%
   left_join(public_signaling_values)
 
 private_signaling_values <- private_ads_cleansed %>%
-  left_join(joined_words_99_99 %>% select(lemma, Log_ratio)) %>%
+  left_join(joined_words_99_99_large_effect %>% select(lemma, Cohens_d)) %>%
   group_by(ID) %>%
-  summarise(signaling_value = round(sum(Log_ratio, na.rm = TRUE) / first(words_in_id), digits = 3))
+  summarise(signaling_value = round(sum(Cohens_d, na.rm = TRUE) / first(words_in_id), digits = 3))
 
 private_ads_sample_raw_clusters <- private_ads_sample_raw_clusters %>%
-  left_join(joined_words_99_99 %>% select(lemma, alpha_private)) %>%
+  left_join(joined_words_99_99_large_effect %>% select(lemma, alpha_private)) %>%
   left_join(private_signaling_values)
 
 # ------------------------------- HMTL Output -------------------------------- #
@@ -898,11 +898,11 @@ public_ads_sample_raw_clusters_sorted <- public_ads_sample_raw_clusters %>%
   arrange(desc(signaling_value)) %>%
   ungroup()
 
-create_html_output(public_ads_sample_raw_clusters_sorted, "public", "Behörde", 50)
+create_html_output(public_ads_sample_raw_clusters_sorted, "public", "Behörde", 10)
 
 private_ads_sample_raw_clusters_sorted <- private_ads_sample_raw_clusters %>%
   group_by(ID, signaling_value) %>%
   arrange(signaling_value) %>%
   ungroup()
 
-create_html_output(private_ads_sample_raw_clusters_sorted, "private", "arbeitgeber", 50)
+create_html_output(private_ads_sample_raw_clusters_sorted, "private", "arbeitgeber", 10)

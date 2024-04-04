@@ -172,3 +172,4 @@ scraper-log.txt
 *.Rproj
 *.Rproj.user
 *.Rprofile
+.Rproj.user
