@@ -429,14 +429,43 @@ cluster_tagging_df <- function(dend, labels_df, group, h) {
     return(clusters_df)
   }
 
-whitespace_after_needed <- function(word, word_after, word_before) {
-  no_space_before <- c(".", ",", ";", ":", "!", "?", ")", "]", "-", "/", "\\", "\\n", "<br>", NA)
-  no_space_after <- c("(", "[", "\\n", "<br>")
-  
-  if (word_after %in% no_space_before | word %in% no_space_after) {
+whitespace_after_needed <- function(word, word_after) {
+  if (word_after %in% c("\\", "\\n", "<br>", NA) | word %in% c("\\", "\\n", "<br>")) {
     return(FALSE)
   }
+  else if (substr(word_after, 1, 1) %in% c(".", ",", ";", ":", "!", "?", ")", "]", "-", "/") | substr(word, nchar(word), nchar(word)) %in% c("(", "[", "-", "/")) {
+    return(FALSE)
+  }
+  
   return(TRUE)
+}
+
+replace_german_special_letters <- function(word) {
+  replacements <- list(
+    "Ä" = "&Auml;",
+    "ä" = "&auml;",
+    "Ö" = "&Ouml;",
+    "ö" = "&ouml;",
+    "Ü" = "&Uuml;",
+    "ü" = "&uuml;",
+    "ß" = "&szlig;",
+    "É" = "&Eacute;",
+    "é" = "&eacute;",
+    "«" = "&laquo;",
+    "»" = "&raquo;",
+    "„" = "&bdquo;",
+    "“" = "&ldquo;",
+    "”" = "&rdquo;",
+    "°" = "&deg;",
+    "€" = "&euro;",
+    "£" = "&pound;"
+  )
+  
+  for (key in names(replacements)) {
+    word <- gsub(key, replacements[[key]], word)
+  }
+  
+  return(word)
 }
 
 create_html_output <- function(df, group, employer_column, n) {
@@ -466,10 +495,10 @@ create_html_output <- function(df, group, employer_column, n) {
       paste(
         "<h3>ID: ",
         data$ID[1],
-        ", ",
-        employer_column,
+        "; ",
+        replace_german_special_letters(employer_column),
         ": ",
-        data[[employer_column]][1],
+        replace_german_special_letters(data[[employer_column]][1]),
         "<span style='color: red;'>",
         " (Signaling Value: ",
         data$signaling_value[1],
@@ -480,9 +509,9 @@ create_html_output <- function(df, group, employer_column, n) {
         if (is.na(data$cluster_name[i])) {
           paste(
             "<span>",
-            data$word[i],
+            replace_german_special_letters(data$word[i]),
             "</span>",
-            ifelse(whitespace_after_needed(data$word[i], ifelse(i == nrow(data), NA, data$word[i + 1]),  ifelse(i == 1, NA, data$word[i - 1])), "&nbsp;", ""),
+            ifelse(whitespace_after_needed(data$word[i], ifelse(i == nrow(data), NA, data$word[i + 1])), "&nbsp;", ""),
             sep = ""
           )
         } else {
@@ -498,10 +527,12 @@ create_html_output <- function(df, group, employer_column, n) {
             word_style,
             "' title='Cluster: ",
             data$cluster_name[i],
+            "; Cohens d: ",
+            data$Cohens_d[i],
             "'>",
-            data$word[i],
+            replace_german_special_letters(data$word[i]),
             "</span>",
-            ifelse(whitespace_after_needed(data$word[i], ifelse(i == nrow(data), NA, data$word[i + 1]),  ifelse(i == 1, NA, data$word[i - 1])), "&nbsp;", ""),
+            ifelse(whitespace_after_needed(data$word[i], ifelse(i == nrow(data), NA, data$word[i + 1])), "&nbsp;", ""),
             sep = ""
           )
         }
@@ -848,7 +879,7 @@ joined_words <- joined_words %>%
     private_total_words,
     norm_private
   )) %>%
-  mutate(Cohens_d = Log_ratio * sqrt(3) / pi)
+  mutate(Cohens_d = round(Log_ratio * sqrt(3) / pi, digits = 3))
 
 # Log likelihood
 # See: https://ucrel.lancs.ac.uk/llwizard.html
@@ -871,8 +902,8 @@ joined_words_99_99_large_effect <- joined_words_99_99[abs(joined_words_99_99$Coh
 
 # Show via alpha parameter, 0 = transparent, 1 = opaque
 joined_words_99_99_large_effect <- joined_words_99_99_large_effect %>%
-  mutate(alpha_public = if_else(over_underuse == 1, normalizer(Cohens_d), NA)) %>%
-  mutate(alpha_private = if_else(over_underuse == -1, normalizer(-Cohens_d), NA))
+  mutate(alpha_public = if_else(over_underuse == 1, round(normalizer(Cohens_d), digits = 2), NA)) %>%
+  mutate(alpha_private = if_else(over_underuse == -1, round(normalizer(-Cohens_d), digits = 2), NA))
 
 public_signaling_values <- public_ads_cleansed %>%
   left_join(joined_words_99_99_large_effect %>% select(lemma, Cohens_d)) %>%
@@ -880,7 +911,7 @@ public_signaling_values <- public_ads_cleansed %>%
   summarise(signaling_value = round(sum(Cohens_d, na.rm = TRUE) / first(words_in_id), digits = 3))
 
 public_ads_sample_raw_clusters <- public_ads_sample_raw_clusters %>%
-  left_join(joined_words_99_99_large_effect %>% select(lemma, alpha_public)) %>%
+  left_join(joined_words_99_99_large_effect %>% select(lemma, alpha_public, Cohens_d)) %>%
   left_join(public_signaling_values)
 
 private_signaling_values <- private_ads_cleansed %>%
@@ -889,7 +920,7 @@ private_signaling_values <- private_ads_cleansed %>%
   summarise(signaling_value = round(sum(Cohens_d, na.rm = TRUE) / first(words_in_id), digits = 3))
 
 private_ads_sample_raw_clusters <- private_ads_sample_raw_clusters %>%
-  left_join(joined_words_99_99_large_effect %>% select(lemma, alpha_private)) %>%
+  left_join(joined_words_99_99_large_effect %>% select(lemma, alpha_private, Cohens_d)) %>%
   left_join(private_signaling_values)
 
 # ------------------------------- HMTL Output -------------------------------- #
