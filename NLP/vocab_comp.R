@@ -29,7 +29,7 @@ library(htmltools)
 
 # --------------------------------- Settings --------------------------------- #
 setwd("~/interamtdb/NLP")
-options(scipen = 999)
+options(scipen=999)
 
 # --------------------------------- Constants -------------------------------- #
 SAMPLE_SIZE <- 5000
@@ -500,8 +500,10 @@ create_html_output <- function(df, group, employer_column, n) {
         ": ",
         replace_german_special_letters(data[[employer_column]][1]),
         "<span style='color: red;'>",
-        " (Signaling Value: ",
+        " (Signaling value: ",
         data$signaling_value[1],
+        "; Ratio: ",
+        data$ratio[1],
         ")</span></h3>",
         sep = ""
       ),
@@ -868,17 +870,17 @@ joined_words[is.na(joined_words)] <- 0
 
 joined_words <- joined_words %>%
   mutate(over_underuse = ifelse(n_public > n_private, 1,-1)) %>%
-  mutate(E_public = as.numeric(public_total_words) * (n_public + n_private) / (public_total_words + private_total_words)) %>%
-  mutate(E_private = as.numeric(private_total_words) * (n_public + n_private) / (public_total_words + private_total_words)) %>%
-  mutate(norm_public = n_public / public_total_words) %>%
-  mutate(norm_private = n_private / private_total_words) %>%
-  mutate(Log_likelihood = log_likelihood(n_public, n_private, E_public, E_private)) %>%
-  mutate(Log_ratio = log_ratio(
+  mutate(E_public = round(as.numeric(public_total_words) * (n_public + n_private) / (public_total_words + private_total_words), digits = 3)) %>%
+  mutate(E_private = round(as.numeric(private_total_words) * (n_public + n_private) / (public_total_words + private_total_words), digits = 3)) %>%
+  mutate(norm_public = round(n_public / public_total_words, digits = 7)) %>%
+  mutate(norm_private = round(n_private / private_total_words, digits = 7)) %>%
+  mutate(Log_likelihood = round(log_likelihood(n_public, n_private, E_public, E_private), digits = 3)) %>%
+  mutate(Log_ratio = round(log_ratio(
     norm_public,
     public_total_words,
     private_total_words,
     norm_private
-  )) %>%
+  ), digits = 3)) %>%
   mutate(Cohens_d = round(Log_ratio * sqrt(3) / pi, digits = 3))
 
 # Log likelihood
@@ -899,6 +901,7 @@ joined_words_99_99 <-
 # Large effect; |d| >= 0.8
 
 joined_words_99_99_large_effect <- joined_words_99_99[abs(joined_words_99_99$Cohens_d) >= 0.8, ]
+write.csv(joined_words_99_99_large_effect, "output/signaling_words_sig_leffect", row.names=FALSE)
 
 # Show via alpha parameter, 0 = transparent, 1 = opaque
 joined_words_99_99_large_effect <- joined_words_99_99_large_effect %>%
@@ -906,18 +909,25 @@ joined_words_99_99_large_effect <- joined_words_99_99_large_effect %>%
   mutate(alpha_private = if_else(over_underuse == -1, round(normalizer(-Cohens_d), digits = 2), NA))
 
 public_signaling_values <- public_ads_cleansed %>%
-  left_join(joined_words_99_99_large_effect %>% select(lemma, Cohens_d)) %>%
+  left_join(joined_words_99_99_large_effect %>% select(lemma, Cohens_d, over_underuse)) %>%
   group_by(ID) %>%
-  summarise(signaling_value = round(sum(Cohens_d, na.rm = TRUE) / first(words_in_id), digits = 3))
+  summarise(signaling_value = round(sum(Cohens_d, na.rm = TRUE) / first(words_in_id), digits = 3),
+            ratio = paste(sum(over_underuse == 1, na.rm = TRUE), "/", sum(over_underuse == -1, na.rm = TRUE)))
+
+# Norm to match Intention to apply scaling
+public_signaling_values$signaling_value <- round(normalizer(public_signaling_values$signaling_value) * 5, digits = 3)
 
 public_ads_sample_raw_clusters <- public_ads_sample_raw_clusters %>%
   left_join(joined_words_99_99_large_effect %>% select(lemma, alpha_public, Cohens_d)) %>%
   left_join(public_signaling_values)
 
 private_signaling_values <- private_ads_cleansed %>%
-  left_join(joined_words_99_99_large_effect %>% select(lemma, Cohens_d)) %>%
+  left_join(joined_words_99_99_large_effect %>% select(lemma, Cohens_d, over_underuse)) %>%
   group_by(ID) %>%
-  summarise(signaling_value = round(sum(Cohens_d, na.rm = TRUE) / first(words_in_id), digits = 3))
+  summarise(signaling_value = round(sum(Cohens_d, na.rm = TRUE) / first(words_in_id), digits = 3),
+            ratio = paste(sum(over_underuse == 1, na.rm = TRUE), "/", sum(over_underuse == -1, na.rm = TRUE)))
+
+private_signaling_values$signaling_value <- round((normalizer(private_signaling_values$signaling_value) - 1) * 5, digits = 3)
 
 private_ads_sample_raw_clusters <- private_ads_sample_raw_clusters %>%
   left_join(joined_words_99_99_large_effect %>% select(lemma, alpha_private, Cohens_d)) %>%
