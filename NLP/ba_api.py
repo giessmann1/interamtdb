@@ -1,3 +1,9 @@
+# ---------------------------------------------------------------------------- #
+#                       Loading BA API data into MongoDB                       #
+#                                                                              #
+#                     (c) Nico Gießmann, MA thesis, 2023-24                    #
+# ---------------------------------------------------------------------------- #
+
 '''
 Importing API module provided bundesAPI from: https://github.com/bundesAPI/jobsuche-api
 '''
@@ -19,7 +25,6 @@ import re
 from nltk.corpus import stopwords
 custom_stopwords = stopwords.words('german') + ['bzw', 'sowie', 'ca', 'ggf', 'ab', 'incl', 'ggfs', 'z.b', 'je', 'inkl', 'u.a', 'o.g', 'zt', 'z.zt', 'usw', 'etwa', 'd.h', '']
 
-
 # Overwriting method, as we search by companies not location
 def search_by_company(jwt, what):
     '''search for jobs. params can be found here: https://jobsuche.api.bund.dev/'''
@@ -38,7 +43,6 @@ def search_by_company(jwt, what):
     response = requests.get('https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/app/jobs',
                             headers=headers, params=params, verify=False)
     return response.json()
-
 
 if __name__ == '__main__':
     try:

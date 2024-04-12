@@ -1,3 +1,9 @@
+# ---------------------------------------------------------------------------- #
+#               Sector tagger for public and non-profit employers              #
+#                                                                              #
+#                     (c) Nico Gießmann, MA thesis, 2023-24                    #
+# ---------------------------------------------------------------------------- #
+
 import sys
 sys.path.append('..')
 from helper import view_df_as_html, frequency_by_columns, frequency_by_one_column
@@ -361,15 +367,12 @@ def public_tagger(text):
     # return tags
     return tags
 
-
 def dropNA_for_lists(list):
     return [item for item in list if item not in ['', None]]
-
 
 def flatten(a):
     # https://discuss.python.org/t/why-cant-iterable-unpacking-be-used-in-comprehension/15622/9
     return [c for b in a for c in flatten(b)] if isinstance(a, list) else [a]
-
 
 def find_tags(employer_name, method_to_run):
     # Cleansing
@@ -395,7 +398,6 @@ def find_tags_two_methods(employer_name, method1, method2):
     tags_second = flatten([method2(item) for item in employer_name_sep])
     tags_first.extend(tags_second)
     return tags_first
-
 
 def _test_method(df, column, tagger):
     df = frequency_by_one_column(df, column)
@@ -424,7 +426,6 @@ def _get_matchers(df, column, tagger):
     df = df.replace(r'^\s*$', pd.NA, regex=True)
     df = df.dropna()
     return df
-
 
 if __name__ == '__main__':
     try:

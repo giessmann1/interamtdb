@@ -901,7 +901,7 @@ joined_words_99_99 <-
 # Large effect; |d| >= 0.8
 
 joined_words_99_99_large_effect <- joined_words_99_99[abs(joined_words_99_99$Cohens_d) >= 0.8, ]
-write.csv(joined_words_99_99_large_effect, "output/signaling_words_sig_leffect", row.names=FALSE)
+write.csv(joined_words_99_99_large_effect, "output/signaling_words_sig_leffect.csv", row.names=FALSE)
 
 # Show via alpha parameter, 0 = transparent, 1 = opaque
 joined_words_99_99_large_effect <- joined_words_99_99_large_effect %>%

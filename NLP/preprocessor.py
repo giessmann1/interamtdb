@@ -1,3 +1,9 @@
+# ---------------------------------------------------------------------------- #
+#         Script for preprocessing job ads from Interamt and BA dataset        #
+#                                                                              #
+#                     (c) Nico Gießmann, MA thesis, 2023-24                    #
+# ---------------------------------------------------------------------------- #
+
 import spacy
 import re
 from nltk.tokenize import sent_tokenize
@@ -162,7 +168,6 @@ def placeholder_no_whitespace(input_string):
         input_string = input_string.replace(match, updated_match)
     return input_string
 
-
 def extract_regex_matches(strings, regex_patterns):
     result = []
     for s in strings:
@@ -177,7 +182,6 @@ def extract_regex_matches(strings, regex_patterns):
         new_result = [item for item in new_result if item != '']
         result.extend(new_result)
     return result
-
 
 def interamt_preprocessor(interamt_col, limit=None):
     list_of_dicts = get_all_collection_docs(interamt_col, limit)
@@ -239,7 +243,6 @@ def interamt_preprocessor(interamt_col, limit=None):
 
     return df
 
-
 # TODO: Harmonize with same method from interamt_scraper.py
 def replace_with_keys(job_ad_dict):
     '''
@@ -258,7 +261,6 @@ def replace_with_keys(job_ad_dict):
             value, '{' + key.replace(' ', '_') + '}', stellenbeschreibung)
 
     return stellenbeschreibung
-
 
 def ba_preprocessor(ba_col, limit=None):
     list_of_dicts = get_all_collection_docs(ba_col, limit)
@@ -326,7 +328,6 @@ def ba_preprocessor(ba_col, limit=None):
 
     return df
 
-
 if __name__ == '__main__':
     try:
         db = mongo_authenticate('../')
@@ -339,7 +340,6 @@ if __name__ == '__main__':
         interamt_col = RUN_OFFLINE("../public_ads_5000.csv")
         ba_col = RUN_OFFLINE("../private_ads_5000.csv")
         
-
     limit = None if len(sys.argv) == 1 else int(sys.argv[1])
     
     # Interamt

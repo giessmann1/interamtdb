@@ -1,3 +1,11 @@
+# ---------------------------------------------------------------------------- #
+#         Statistical analysis of the data collected in the experiment         #
+#                                                                              #
+#                     (c) Nico Gießmann, MA thesis, 2023-24                    #
+# ---------------------------------------------------------------------------- #
+
+# ---------------------------------- Imports --------------------------------- #
+
 library(ggplot2)
 library(dplyr)
 library(patchwork)
@@ -45,4 +53,3 @@ intention_to_apply.lm <- lm(intention_to_apply ~ sector_preference*signaling + s
 summary(intention_to_apply.lm)
 
 unique(data[c("sector_affiliation", "signaling")])
-

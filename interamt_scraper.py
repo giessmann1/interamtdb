@@ -1,3 +1,9 @@
+# ---------------------------------------------------------------------------- #
+#                        Scraper module for Interamt.de                        #
+#                                                                              #
+#                     (c) Nico Gießmann, MA thesis, 2023-24                    #
+# ---------------------------------------------------------------------------- #
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
@@ -11,14 +17,12 @@ import pymongo
 import json
 import requests
 
-
 def dicts_equal(d1, d2):
     ''' return True if all keys and values are the same '''
     return all(k in d2 and d1[k] == d2[k]
                for k in d1) \
         and all(k in d1 and d1[k] == d2[k]
                 for k in d2)
-
 
 def get_new_job_ads(conn):
     # Optimization to run on a headless server-side firefox, adjust if other setups are used.
@@ -163,7 +167,6 @@ def get_new_job_ads(conn):
     driver.quit()
     return list_of_dicts
 
-
 def get_tr_as_dict(tr):
     data = {}
     for td in tr.find_all('td'):
@@ -176,13 +179,11 @@ def get_tr_as_dict(tr):
         data[label] = td.text.strip()
     return data
 
-
 def write_to_json_file(list_of_dicts):
     json_string = json.dumps(list_of_dicts)
     f = open('job_table.json', 'w')
     f.write(json_string)
     f.close()
-
 
 def get_li_as_list(li):
     term = li.find('span', class_='ia-m-desc-list__list-term')
@@ -192,7 +193,6 @@ def get_li_as_list(li):
     value = li.find(
         'span', class_='ia-m-desc-list__list-desc').text.strip().replace('\n', ' ')
     return [term, value]
-
 
 def mongo_authenticate():
     f_open = open('.secrets/mongodb_user.txt', 'r')
@@ -213,7 +213,6 @@ def mongo_authenticate():
 
     return mycol
 
-
 def remove_inline_elements(html_text):
     if html_text == None:
         return None
@@ -228,7 +227,6 @@ def remove_inline_elements(html_text):
             i.unwrap()
 
     return html_text
-
 
 def scrape_job_ad(id):
     url = f'https://www.interamt.de/koop/app/stelle?id={id}'
@@ -272,7 +270,6 @@ def scrape_job_ad(id):
 
     return data
 
-
 def remove_duplicates(job_ad):
     '''
     This function removes duplicates of the Interamt Side and other data cleansing stuff.
@@ -300,7 +297,6 @@ def remove_duplicates(job_ad):
     job_ad = {k: v for k, v in job_ad.items() if v}
     return job_ad
 
-
 def ireplace(old, new, text):
     '''
     Credit to https://stackoverflow.com/questions/919056/case-insensitive-replace
@@ -313,7 +309,6 @@ def ireplace(old, new, text):
         text = text[:index_l] + new + text[index_l + len(old):]
         idx = index_l + len(new)
     return text
-
 
 def replace_with_keys(job_ad_dict):
     '''
@@ -339,7 +334,6 @@ def update_column(conn):
     for row in conn.find():
         conn.update_one({'_id': row['_id']}, {'$set': {'Eingestellt': datetime.strptime(
             row['Eingestellt'], '%d.%m.%Y').date().strftime('%Y-%m-%d')}})
-
 
 if __name__ == '__main__':
     conn = mongo_authenticate()
