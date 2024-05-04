@@ -26,6 +26,7 @@ library(xml2)
 library(openxlsx)
 library(purrr)
 library(htmltools)
+library(xtable)
 
 # --------------------------------- Settings --------------------------------- #
 setwd("~/interamtdb/NLP")
@@ -577,8 +578,7 @@ create_html_output <- function(df, group, employer_column, n) {
   writeLines(final_html_string, output_file)
 }
 
-log_likelihood <-
-  function(n_public, n_private, E_public, E_private) {
+log_likelihood <- function(n_public, n_private, E_public, E_private) {
     result <-
       2 * ((n_public * ifelse(
         n_public == 0 | E_public == 0, 0, log(n_public / E_public)
@@ -663,35 +663,41 @@ private_ads_text_cleansed <-
 # -------------------------------- Zipf's law -------------------------------- #
 # Public
 temp_public <- public_ads_cleansed %>%
-  select(lemma, tag, document_frequency) %>%
+  select(lemma, n) %>%
   unique() %>%
-  arrange(desc(document_frequency)) %>%
+  arrange(desc(n)) %>%
   mutate(vocab = "Public") %>%
-  ungroup()
+  ungroup() %>%
+  mutate(rel_frequency = (n / sum(n)) * 100)
 temp_public$rank <- seq_len(nrow(temp_public))
 temp_public <-
-  temp_public %>% select(rank, document_frequency, vocab)
+  temp_public %>% select(rank, n, rel_frequency, lemma, vocab)
 
 # Private
 temp_private <- private_ads_cleansed %>%
-  select(lemma, tag, document_frequency) %>%
+  select(lemma, n) %>%
   unique() %>%
-  arrange(desc(document_frequency)) %>%
+  arrange(desc(n)) %>%
   mutate(vocab = "Private") %>%
-  ungroup()
+  ungroup() %>%
+  mutate(rel_frequency = (n / sum(n)) * 100)
 temp_private$rank <- seq_len(nrow(temp_private))
 temp_private <-
-  temp_private %>% select(rank, document_frequency, vocab)
+  temp_private %>% select(rank, n, rel_frequency, lemma, vocab)
 
 # Plotting Zipf's law (see https://doi.org/10.3758/s13423-014-0585-6)
-rbind(temp_public, temp_private) %>%
-  ggplot(aes(rank, document_frequency, color = vocab)) +
+rbind(temp_public %>% select(-c(lemma, rel_frequency)), temp_private %>% select(-c(lemma, rel_frequency))) %>%
+  ggplot(aes(rank, n, color = vocab)) +
   geom_line(alpha = 0.8) +
   scale_x_log10() +
-  scale_y_log10()
-ggsave("output/zipfs_law.pdf", width = 12, height = 8, units = "cm", dpi = "print")
+  scale_y_log10() +
+  ylab("N") +
+  xlab("Rank") +
+  labs(color="Sector of vocabulary") +
+  theme_bw()
+ggsave("output/zipfs_law.pdf", width = 13, height = 8, units = "cm", dpi = "print")
 
-rm(temp_public, temp_private)
+rm(temp_public, temp_private, temp_zipfs)
 
 # ------------------------ Generate distance measures ------------------------ #
 # Synonyms, semantic relationships on word level
@@ -854,7 +860,7 @@ descriptives <-
     suffix = c("_public", "_private")
   )
 
-# TODO: Independent t test
+print(xtable(descriptives, type = "latex"), file = "output/clusterassignment.tex")
 
 # TODO: Sequence of clusters?
 
@@ -883,6 +889,22 @@ joined_words <- joined_words %>%
   ), digits = 3)) %>%
   mutate(Cohens_d = round(Log_ratio * sqrt(3) / pi, digits = 3))
 
+# Shared vocabulary
+mean_log_ration <- as.character(joined_words %>%
+  filter(n_public > 0 & n_private > 0) %>%
+  summarize(mean = round(mean(Log_ratio), digits = 2)))
+
+joined_words %>%
+  filter(n_public > 0 & n_private > 0) %>%
+  ggplot(aes(x=Log_ratio)) +
+    geom_histogram(binwidth=0.5, fill="#69b3a2", color="#e9ecef", alpha=0.9) +
+    geom_vline(aes(xintercept = mean(Log_ratio)),col='#f8766d',size=0.8) +
+    annotate("text", x = 1, y = 100, label = mean_log_ration, size = 5) +
+    ylab("Frequency") +
+    xlab("Log ratio of the relative keyword frequencies (negative = private, positive = public)") +
+    theme_bw()
+ggsave("output/sharedvocab.pdf", width = 16, height = 10, units = "cm")
+  
 # Log likelihood
 # See: https://ucrel.lancs.ac.uk/llwizard.html
 # 95th percentile; 5% level; p < 0.05; critical value = 3.84
@@ -902,6 +924,35 @@ joined_words_99_99 <-
 
 joined_words_99_99_large_effect <- joined_words_99_99[abs(joined_words_99_99$Cohens_d) >= 0.8, ]
 write.csv(joined_words_99_99_large_effect, "output/signaling_words_sig_leffect.csv", row.names=FALSE)
+
+# Distribution of signals
+joined_words_99_99_large_effect %>%
+  select(over_underuse) %>%
+  group_by(over_underuse) %>%
+  summarise(n = n())
+
+# Combine signals and clusters
+signals <- joined_words_99_99_large_effect %>%
+  select(lemma, Cohens_d)
+
+colnames(public_cluster)[colnames(public_cluster) == 'words'] <- 'lemma'
+public_cluster <- merge(public_cluster, signals, all.x=TRUE, by = "lemma")
+
+top_signals_per_cluster_public <- public_cluster %>%
+  select(lemma, cluster_name, Cohens_d) %>%
+  drop_na() %>%
+  group_by(cluster_name) %>%
+  slice_max(order_by = Cohens_d, n = 20)
+
+colnames(private_cluster)[colnames(private_cluster) == 'words'] <- 'lemma'
+private_cluster <- merge(private_cluster, signals, all.x=TRUE, by = "lemma")
+
+top_signals_per_cluster_private <- private_cluster %>%
+  select(lemma, cluster_name, Cohens_d) %>%
+  drop_na() %>%
+  group_by(cluster_name) %>%
+  slice_min(order_by = Cohens_d, n = 20)
+
 
 # Show via alpha parameter, 0 = transparent, 1 = opaque
 joined_words_99_99_large_effect <- joined_words_99_99_large_effect %>%
@@ -936,14 +987,14 @@ private_ads_sample_raw_clusters <- private_ads_sample_raw_clusters %>%
 # ------------------------------- HMTL Output -------------------------------- #
 public_ads_sample_raw_clusters_sorted <- public_ads_sample_raw_clusters %>%
   group_by(ID, signaling_value) %>%
-  arrange(desc(signaling_value)) %>%
-  ungroup()
-
-create_html_output(public_ads_sample_raw_clusters_sorted, "public", "Behörde", 10)
-
-private_ads_sample_raw_clusters_sorted <- private_ads_sample_raw_clusters %>%
-  group_by(ID, signaling_value) %>%
   arrange(signaling_value) %>%
   ungroup()
 
-create_html_output(private_ads_sample_raw_clusters_sorted, "private", "arbeitgeber", 10)
+create_html_output(public_ads_sample_raw_clusters_sorted, "public", "Behörde", 200)
+
+private_ads_sample_raw_clusters_sorted <- private_ads_sample_raw_clusters %>%
+  group_by(ID, signaling_value) %>%
+  arrange(desc(signaling_value)) %>%
+  ungroup()
+
+create_html_output(private_ads_sample_raw_clusters_sorted, "private", "arbeitgeber", 200)

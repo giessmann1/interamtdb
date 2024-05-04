@@ -1,0 +1,25 @@
+\setlength{\LTpost}{0mm}
+\begin{longtable}{lcccc}
+\toprule
+ & \multicolumn{2}{c}{\textbf{Sector preference}} & \multicolumn{2}{c}{\textbf{PSM}} \\ 
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+\textbf{Characteristic} & \textbf{Beta}\textsuperscript{\textit{1}} & \textbf{SE}\textsuperscript{\textit{2}} & \textbf{Beta}\textsuperscript{\textit{1}} & \textbf{SE}\textsuperscript{\textit{2}} \\ 
+\midrule\addlinespace[2.5pt]
+(Intercept) & 2.8*** & 0.252 & 2.5*** & 0.210 \\ 
+Sectorpreference & -0.53 & 0.350 &  &  \\ 
+Signalingvalue & -0.24*** & 0.051 & -0.11* & 0.043 \\ 
+Sectoraffiliation & -0.43 & 0.359 & 0.29 & 0.300 \\ 
+Sectorpreference * Signalingvalue & 0.20** & 0.071 &  &  \\ 
+Sectorpreference * Sectoraffiliation & 1.4** & 0.499 &  &  \\ 
+PSM\_factor &  &  & 0.24 & 0.428 \\ 
+PSM\_factor * Signalingvalue &  &  & -0.13 & 0.087 \\ 
+PSM\_factor * Sectoraffiliation &  &  & 0.00 & 0.610 \\ 
+Adjusted R² & 0.146 &  & 0.065 &  \\ 
+Statistic & 6.92 &  & 3.42 &  \\ 
+\bottomrule
+\end{longtable}
+\begin{minipage}{\linewidth}
+\textsuperscript{\textit{1}}*p\textless{}0.05; **p\textless{}0.01; ***p\textless{}0.001\\
+\textsuperscript{\textit{2}}SE = Standard Error\\
+\end{minipage}
+

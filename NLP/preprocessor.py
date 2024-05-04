@@ -187,7 +187,7 @@ def interamt_preprocessor(interamt_col, limit=None):
     list_of_dicts = get_all_collection_docs(interamt_col, limit)
     # Pre-filter if not all columns are needed
     list_of_filtered_dicts = [
-        {key: d.get(key) for key in ['ID', 'Behörde', 'Stellenbeschreibung']} for d in list_of_dicts]
+        {key: d.get(key) for key in ['ID', 'Behörde', 'Stellenbeschreibung', 'Eingestellt']} for d in list_of_dicts]
     df = pd.DataFrame(list_of_filtered_dicts)
     df['Stellenbeschreibung'] = df['Stellenbeschreibung'].replace('', pd.NA)
     df = df.dropna() # Removes 'Stellenbeschreibung' when None --> eg. references to websites
@@ -265,7 +265,7 @@ def replace_with_keys(job_ad_dict):
 def ba_preprocessor(ba_col, limit=None):
     list_of_dicts = get_all_collection_docs(ba_col, limit)
     list_of_filtered_dicts = [
-        {key: d.get(key) for key in ['refnr', 'aktuelleVeroeffentlichungsdatum', 'arbeitgeber', 'branche', 'eintrittsdatum', 'titel', 'beruf', 'stellenbeschreibung', 'tarifvertrag', 'tarifvertrag', 'externeUrl']} for d in list_of_dicts]
+        {key: d.get(key) for key in ['refnr', 'modifikationsTimestamp', 'arbeitgeber', 'branche', 'eintrittsdatum', 'titel', 'beruf', 'stellenbeschreibung', 'tarifvertrag', 'tarifvertrag', 'externeUrl']} for d in list_of_dicts]
     df = pd.DataFrame(list_of_filtered_dicts)
     df['stellenbeschreibung'] = df['stellenbeschreibung'].replace('', pd.NA)
     df = df.dropna() # Removes 'stellenbeschreibung' when None --> eg. references to websites
@@ -341,18 +341,20 @@ if __name__ == '__main__':
         ba_col = RUN_OFFLINE("../private_ads_5000.csv")
         
     limit = None if len(sys.argv) == 1 else int(sys.argv[1])
-    
+
     # Interamt
     print(bcolors.OKBLUE + "Interamt preprocessing started..." + bcolors.ENDC)
     df = interamt_preprocessor(interamt_col, limit)
+
     # view_df_as_html(df)
     df['word'] = df['word'].apply(lambda x: x.replace('\n', '\\n'))
     df['word'] = df['word'].apply(lambda x: x.replace('\t', '\\t'))
     df.to_csv('public_ads.csv', quoting=csv.QUOTE_ALL, index=False)
     
-    # BA
+        # BA
     print(bcolors.OKBLUE + "BA preprocessing started..." + bcolors.ENDC)
     df = ba_preprocessor(ba_col, limit)
+
     # view_df_as_html(df)
     df['word'] = df['word'].apply(lambda x: x.replace('\n', '\\n'))
     df['word'] = df['word'].apply(lambda x: x.replace('\t', '\\t'))
