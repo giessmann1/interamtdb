@@ -1,0 +1,31 @@
+\setlength{\LTpost}{0mm}
+\begin{longtable}{lcccccccc}
+\toprule
+ & \multicolumn{2}{c}{\textbf{APM}} & \multicolumn{2}{c}{\textbf{COM}} & \multicolumn{2}{c}{\textbf{CPI}} & \multicolumn{2}{c}{\textbf{SS}} \\ 
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
+\textbf{Characteristic} & \textbf{Beta}\textsuperscript{\textit{1}} & \textbf{SE}\textsuperscript{\textit{2}} & \textbf{Beta}\textsuperscript{\textit{1}} & \textbf{SE}\textsuperscript{\textit{2}} & \textbf{Beta}\textsuperscript{\textit{1}} & \textbf{SE}\textsuperscript{\textit{2}} & \textbf{Beta}\textsuperscript{\textit{1}} & \textbf{SE}\textsuperscript{\textit{2}} \\ 
+\midrule\addlinespace[2.5pt]
+(Intercept) & 3.0*** & 0.398 & 3.1*** & 0.608 & 3.2*** & 0.812 & 2.6*** & 0.533 \\ 
+APM & -0.07 & 0.102 &  &  &  &  &  &  \\ 
+Signalingvalue & -0.26** & 0.081 & -0.38** & 0.124 & -0.12 & 0.166 & -0.16 & 0.109 \\ 
+Sectoraffiliation & 0.26 & 0.567 & 0.38 & 0.867 & 0.28 & 1.16 & 0.25 & 0.760 \\ 
+APM * Signalingvalue & 0.04* & 0.021 &  &  &  &  &  &  \\ 
+APM * Sectoraffiliation & -0.04 & 0.146 &  &  &  &  &  &  \\ 
+COM &  &  & -0.09 & 0.169 &  &  &  &  \\ 
+COM * Signalingvalue &  &  & 0.08* & 0.034 &  &  &  &  \\ 
+COM * Sectoraffiliation &  &  & -0.07 & 0.241 &  &  &  &  \\ 
+CPI &  &  &  &  & -0.11 & 0.204 &  &  \\ 
+CPI * Signalingvalue &  &  &  &  & 0.00 & 0.042 &  &  \\ 
+CPI * Sectoraffiliation &  &  &  &  & -0.04 & 0.291 &  &  \\ 
+SS &  &  &  &  &  &  & 0.03 & 0.151 \\ 
+SS * Signalingvalue &  &  &  &  &  &  & 0.02 & 0.031 \\ 
+SS * Sectoraffiliation &  &  &  &  &  &  & -0.04 & 0.215 \\ 
+Adjusted R² & 0.047 &  & 0.049 &  & 0.027 &  & 0.025 &  \\ 
+Statistic & 3.28 &  & 3.41 &  & 2.31 &  & 2.19 &  \\ 
+\bottomrule
+\end{longtable}
+\begin{minipage}{\linewidth}
+\textsuperscript{\textit{1}}*p\textless{}0.05; **p\textless{}0.01; ***p\textless{}0.001\\
+\textsuperscript{\textit{2}}SE = Standard Error\\
+\end{minipage}
+

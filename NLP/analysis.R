@@ -15,6 +15,7 @@ library(survival)
 library(car)
 library(psych)
 library(lsr)
+library(coin)
 
 # ---------------------------------- Methods --------------------------------- #
 perc <- function(v) {
@@ -127,7 +128,7 @@ ggplot(power_analysis, aes(y = value, x = `Effect.size`, colour = name)) +
 ggsave("output/gpower.pdf", width = 15, height = 8, units = "cm")
 
 # ------------------------------ Data cleansing ------------------------------ #
-data <- read.csv("input/data_job_market_survey_2024-05-03_16-27.csv")
+data <- read.csv("input/data_job_market_survey_2024-05-12_17-50.csv")
 
 # Remove first entry (test)
 data = data[-1,]
@@ -332,7 +333,8 @@ hist(ItA_secprefmet$ItA)
 describe(ItA_secprefnotmet$ItA)
 hist(ItA_secprefnotmet$ItA)
 
-t.test(ItA_secprefmet$ItA, ItA_secprefnotmet$ItA, paired = TRUE, alternative = "greater")
+wilcox.test(ItA_secprefmet$ItA, ItA_secprefnotmet$ItA, alternative = "greater")
+mean(ItA_secprefmet$ItA) - mean(ItA_secprefnotmet$ItA)
 
 # Hypothesis 2b-3:
 datac <- summarySE(final_data, measurevar = "ItA", groupvars = c("Signalingvalue", "Sectoraffiliation", "Sectorpreference"))
@@ -441,6 +443,45 @@ summary(ItA_CPI.lm)
 ItA_SS.lm <- lm(ItA ~ SS*Signalingvalue + SS*Sectoraffiliation, final_data)
 summary(ItA_SS.lm)
 
+t1 <- tbl_regression(ItA_APM.lm,
+                     show_single_row = c("APM", "Sectoraffiliation", "APM:Signalingvalue", "APM:Sectoraffiliation"),
+                     intercept = TRUE,
+                     conf.level = 0.95) %>%
+  add_significance_stars() %>%
+  add_glance_table(include = c(adj.r.squared, statistic))
+
+t2 <- tbl_regression(ItA_COM.lm,
+                     show_single_row = c("COM", "Sectoraffiliation", "COM:Signalingvalue", "COM:Sectoraffiliation"),
+                     intercept = TRUE,
+                     conf.level = 0.95) %>%
+  add_significance_stars() %>%
+  add_glance_table(include = c(adj.r.squared, statistic))
+
+t3 <- tbl_regression(ItA_CPI.lm,
+                     show_single_row = c("CPI", "Sectoraffiliation", "CPI:Signalingvalue", "CPI:Sectoraffiliation"),
+                     intercept = TRUE,
+                     conf.level = 0.95) %>%
+  add_significance_stars() %>%
+  add_glance_table(include = c(adj.r.squared, statistic))
+
+t4 <- tbl_regression(ItA_SS.lm,
+                     show_single_row = c("SS", "Sectoraffiliation", "SS:Signalingvalue", "SS:Sectoraffiliation"),
+                     intercept = TRUE,
+                     conf.level = 0.95) %>%
+  add_significance_stars() %>%
+  add_glance_table(include = c(adj.r.squared, statistic))
+
+tbl_merge(
+  tbls = list(t1, t2, t3, t4),
+  tab_spanner = c("**APM**", "**COM**", "**CPI**", "**SS**")
+) %>%
+  modify_table_body(~.x %>% arrange(row_type == "glance_statistic")) %>%
+  as_gt() %>%
+  gtsave(filename = "output/psm_dims.tex")
+
+
+
+
 # Output of LM (dual view)
 t1 <- tbl_regression(ItA_SecPref.lm,
                      show_single_row = c("Sectorpreference", "Sectoraffiliation", "Sectorpreference:Signalingvalue", "Sectorpreference:Sectoraffiliation"),
@@ -450,7 +491,7 @@ t1 <- tbl_regression(ItA_SecPref.lm,
   add_glance_table(include = c(adj.r.squared, statistic))
 
 t2 <- tbl_regression(ItA_PSM.lm,
-                     show_single_row = c("PSM_factor", "Sectoraffiliation", "PSM_factor:Signalingvalue", "PSM_factor:Sectoraffiliation"),
+                     show_single_row = c("PSM", "Sectoraffiliation", "PSM:Signalingvalue", "PSM:Sectoraffiliation"),
                      intercept = TRUE,
                      conf.level = 0.95) %>%
   add_significance_stars() %>%
@@ -486,7 +527,7 @@ hist(PSM_private$PSM)
 
 mean(PSM_public$PSM) - mean(PSM_private$PSM)
 
-t.test(PSM_public$PSM, PSM_private$PSM, alternative = "greater")
+wilcox.test(PSM_public$PSM, PSM_private$PSM, alternative = "greater")
 
 # PJ fit and org attr
 PJ_org.lm <- lm(PJfit ~ Org, final_data)
