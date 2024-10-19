@@ -27,15 +27,15 @@ def dicts_equal(d1, d2):
 def get_new_job_ads(conn):
     # Optimization to run on a headless server-side firefox, adjust if other setups are used.
     # Be aware of incompatibilites between selenium and geckodriver, see requirements.txt
-    opts = Options()
-    opts.binary_location = getoutput(
-        'find /snap/firefox -name firefox').split('\n')[-1]
-    opts.add_argument('--headless')
-    service = Service(executable_path='/usr/local/bin/geckodriver')
-    driver = webdriver.Firefox(options=opts, service=service)
+    # opts = Options()
+    # opts.binary_location = getoutput(
+    #    'find /snap/firefox -name firefox').split('\n')[-1]
+    # opts.add_argument('--headless')
+    # service = Service(executable_path='/usr/local/bin/geckodriver')
+    # driver = webdriver.Firefox(options=opts, service=service)
 
     # For Safari
-    # driver = webdriver.Safari()
+    driver = webdriver.Safari()
 
     url = 'https://interamt.de/koop/app/trefferliste'
     driver.get(url)
@@ -43,7 +43,7 @@ def get_new_job_ads(conn):
     # Click cookie button
     time.sleep(3)
     driver.find_element(
-        By.XPATH, "//button[contains(@class, 'ia-e-button') and contains(@class, 'ia-e-button--primary') and contains(@class, 'ia-js-cookie-flyout__cta')]").click()
+        By.XPATH, "//button[contains(@class, 'ia-e-button') and contains(@class, 'ia-e-button--primary') and contains(@class, 'ia-js-cookie-accept__all')]").click()
     time.sleep(2)
 
     soup = BeautifulSoup(driver.page_source, 'html.parser')
@@ -348,7 +348,7 @@ if __name__ == '__main__':
         extended_job_ad = replace_with_keys(extended_job_ad)
         # Save to file or db
         conn.insert_one(extended_job_ad)
-        # print('Job ad ' + str(i + 1) + ' of ' + str(len(list_of_new_job_ads)) + ' scraped.')
+        print('Job ad ' + str(i + 1) + ' of ' + str(len(list_of_new_job_ads)) + ' scraped.')
         time.sleep(4)
 
     print(str(len(list_of_new_job_ads)))

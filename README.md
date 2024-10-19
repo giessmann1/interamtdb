@@ -5,8 +5,8 @@ Project to build a research database based on job advertisements from <interamt.
 
 Create Python virtual environment:
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .env
+source .env/bin/activate
 pip3 install -r requirements.txt
 ```
 
@@ -21,10 +21,14 @@ echo "username" > .secrets/mongodb_user.txt
 echo "password" > .secrets/mongodb_pwd.txt
 ```
 
+Docker installation needed, see: https://docs.docker.com/engine/install/.
+
 Starting the db:
 ```bash
 sh startdb.sh
 ```
+
+For the webdriver, check that automation is enabled/allowed.
 
 ## Start scraping
 
