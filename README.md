@@ -1,6 +1,8 @@
 # Interamtdb - Database for Interamt job advertisements
 Project to build a research database based on job advertisements from <interamt.de>
 
+## This is an actively maintained repository. If you have suggestions for further improvement or find bugs: [Email me](mailto:nico.giessmann@uni-luebeck.de)
+
 ## Setup instructions
 
 Create Python virtual environment:

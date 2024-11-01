@@ -27,15 +27,15 @@ def dicts_equal(d1, d2):
 def get_new_job_ads(conn):
     # Optimization to run on a headless server-side firefox, adjust if other setups are used.
     # Be aware of incompatibilites between selenium and geckodriver, see requirements.txt
-    # opts = Options()
-    # opts.binary_location = getoutput(
-    #    'find /snap/firefox -name firefox').split('\n')[-1]
-    # opts.add_argument('--headless')
-    # service = Service(executable_path='/usr/local/bin/geckodriver')
-    # driver = webdriver.Firefox(options=opts, service=service)
+    opts = Options()
+    opts.binary_location = getoutput(
+       'find /snap/firefox -name firefox').split('\n')[-1]
+    opts.add_argument('--headless')
+    service = Service(executable_path='/usr/local/bin/geckodriver')
+    driver = webdriver.Firefox(options=opts, service=service)
 
     # For Safari
-    driver = webdriver.Safari()
+    # driver = webdriver.Safari()
 
     url = 'https://interamt.de/koop/app/trefferliste'
     driver.get(url)
@@ -46,6 +46,8 @@ def get_new_job_ads(conn):
         By.XPATH, "//button[contains(@class, 'ia-e-button') and contains(@class, 'ia-e-button--primary') and contains(@class, 'ia-js-cookie-accept__all')]").click()
     time.sleep(2)
 
+    # print("Cookie button clicked")
+
     soup = BeautifulSoup(driver.page_source, 'html.parser')
     table = soup.find('table')  # find table
     # get number of current job ads
@@ -55,6 +57,7 @@ def get_new_job_ads(conn):
     ADS_PER_LOOP = 10  # constant determined by website
     # plus one since remainder requires a loop, minus one since 10 ads are initially there
     loops = int(job_ads_max / ADS_PER_LOOP)
+    if (loops > 300): loops = 300 # Limiter, max. 3000 on initial run
     last_loop_entries = job_ads_max % ADS_PER_LOOP
     # id can change depending of browser
     button_id = table.find('button').get('id')
@@ -71,6 +74,8 @@ def get_new_job_ads(conn):
     else:
         last_entry_in_db = dict(last_entry_in_db[0])
 
+    # print("DB Check finished: " + str(last_entry_in_db))
+
     '''
     Optimized code for the initial run.
     '''
@@ -86,6 +91,7 @@ def get_new_job_ads(conn):
                     driver.implicitly_wait(20)
                     driver.find_element(By.ID, button_id).click()
                     time.sleep(3)  # Min waiting time for animation
+                    # print("Clicking: " + str(i) + " out of " + str(loops) + ".")
                 except:
                     # print('Driver reloaded.')
                     driver.implicitly_wait(20)
@@ -97,7 +103,7 @@ def get_new_job_ads(conn):
                         driver.find_element(By.ID, button_id).click()
                     except:
                         print('Serious trouble here.')
-                        # print(BeautifulSoup(driver.page_source, 'html.parser'))
+                        print(BeautifulSoup(driver.page_source, 'html.parser'))
                         driver.quit()
                         exit(1)
 
@@ -114,6 +120,7 @@ def get_new_job_ads(conn):
     Default sorting of website by adding date and id
     '''
     for i in range(loops):
+        # print('Loop ' + str(i + 1) + ' of ' + str(loops) + '_max done.')
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         table_body = soup.find('table').find('tbody')
         trs_last_tens = None
@@ -137,7 +144,6 @@ def get_new_job_ads(conn):
                     break
             list_of_dicts.append(tr_as_dict)
 
-        # print('Loop ' + str(i + 1) + ' of ' + str(loops) + ' done.')
         if finished:
             break
         if (i != 1):
@@ -157,7 +163,7 @@ def get_new_job_ads(conn):
                     driver.find_element(By.ID, button_id).click()
                 except:
                     print('Serious trouble here.')
-                    # print(BeautifulSoup(driver.page_source, 'html.parser'))
+                    print(BeautifulSoup(driver.page_source, 'html.parser'))
                     driver.quit()
                     exit(1)
 
@@ -186,12 +192,11 @@ def write_to_json_file(list_of_dicts):
     f.close()
 
 def get_li_as_list(li):
-    term = li.find('span', class_='ia-m-desc-list__list-term')
-    if (term is None):
+    contents = li.find_all('span', class_='ia-m-desc-list__item-content')
+    if (contents is None or len(contents) < 2):
         return None
-    term = term.text.strip()
-    value = li.find(
-        'span', class_='ia-m-desc-list__list-desc').text.strip().replace('\n', ' ')
+    term = contents[0].text.strip().replace('\n', ' ')
+    value = contents[1].text.strip().replace('\n', ' ')
     return [term, value]
 
 def mongo_authenticate():
@@ -242,7 +247,7 @@ def scrape_job_ad(id):
     soup = BeautifulSoup(r.content, 'html.parser')
 
     stellenbeschreibung_text = soup.find(
-        'div', class_='ia-e-richtext ia-m-section ia-m-job-offer-display-panel ia-h-border--bottom')
+        'div', class_='ia-e-richtext ia-h-space--top-l ia-m-job-offer-display-panel ia-h-border--bottom')
     stellenbeschreibung_text = remove_inline_elements(stellenbeschreibung_text)
 
     # Add newline to li elements
@@ -340,15 +345,15 @@ if __name__ == '__main__':
     list_of_new_job_ads = get_new_job_ads(conn)
 
     for i in range(len(list_of_new_job_ads)):
-        id = list_of_new_job_ads[i]['ID']
-        # Overwriting is ok
-        extended_job_ad = {**list_of_new_job_ads[i], **scrape_job_ad(id)}
-        # Cleansing
-        extended_job_ad = remove_duplicates(extended_job_ad)
-        extended_job_ad = replace_with_keys(extended_job_ad)
-        # Save to file or db
-        conn.insert_one(extended_job_ad)
-        print('Job ad ' + str(i + 1) + ' of ' + str(len(list_of_new_job_ads)) + ' scraped.')
-        time.sleep(4)
+       id = list_of_new_job_ads[i]['ID']
+       # Overwriting is ok
+       extended_job_ad = {**list_of_new_job_ads[i], **scrape_job_ad(id)}
+       # Cleansing
+       extended_job_ad = remove_duplicates(extended_job_ad)
+       extended_job_ad = replace_with_keys(extended_job_ad)
+       # Save to file or db
+       conn.insert_one(extended_job_ad)
+       # print('Job ad ' + str(i + 1) + ' of ' + str(len(list_of_new_job_ads)) + ' scraped.')
+       time.sleep(4)
 
     print(str(len(list_of_new_job_ads)))
