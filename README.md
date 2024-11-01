@@ -1,7 +1,7 @@
 # Interamtdb - Database for Interamt job advertisements
 Project to build a research database based on job advertisements from <interamt.de>
 
-## This is an actively maintained repository. If you have suggestions for further improvement or find bugs: [Email me](mailto:nico.giessmann@uni-luebeck.de)
+❗ This is an actively maintained repository. If you have suggestions for further improvement or find bugs: [Email me](mailto:nico.giessmann@uni-luebeck.de)
 
 ## Setup instructions
 
@@ -19,8 +19,8 @@ mkdir .secrets/
 
 # Create mongodb_user.txt and mongodb_pwd.txt and set your own username and password (no update in Python scripts necessary). Be aware of newlines, which need to be removed!
 
-echo "username" > .secrets/mongodb_user.txt
-echo "password" > .secrets/mongodb_pwd.txt
+echo -n "username" > .secrets/mongodb_user.txt
+echo -n "password" > .secrets/mongodb_pwd.txt
 ```
 
 Docker installation needed, see: https://docs.docker.com/engine/install/.
