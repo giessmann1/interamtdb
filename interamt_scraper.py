@@ -16,6 +16,7 @@ import urllib.parse
 import pymongo
 import json
 import requests
+from database_wrapper import *
 
 def dicts_equal(d1, d2):
     ''' return True if all keys and values are the same '''
