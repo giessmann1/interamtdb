@@ -61,7 +61,8 @@ def get_one_column_filter(col, column_get, column_filter, filter, limit=None):
 # Run the module directly to check if connection works
 if __name__ == '__main__':
     try:
-        db = mongo_authenticate('./')
+        client = mongo_authenticate('./')
+        db = client["interamtdb"]
         cols = db.list_collection_names()
         print('Connection working:', cols)
     except Exception as e:
