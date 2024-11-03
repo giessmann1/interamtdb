@@ -16,6 +16,7 @@ import urllib.parse
 import pymongo
 import json
 import requests
+import database_wrapper
 
 def dicts_equal(d1, d2):
     ''' return True if all keys and values are the same '''
@@ -194,25 +195,6 @@ def get_li_as_list(li):
         'span', class_='ia-m-desc-list__list-desc').text.strip().replace('\n', ' ')
     return [term, value]
 
-def mongo_authenticate():
-    f_open = open('.secrets/mongodb_user.txt', 'r')
-    username = f_open.readlines()[0]
-    f_open.close()
-    username = urllib.parse.quote_plus(username)
-
-    f_open = open('.secrets/mongodb_pwd.txt', 'r')
-    password = f_open.readlines()[0]
-    f_open.close()
-    password = urllib.parse.quote_plus(password)
-
-    # Execution on remote server expected, therefore using localhost and default port.
-    client = pymongo.MongoClient(
-        'mongodb://%s:%s@localhost:27017' % (username, password), authSource='admin')
-    mydb = client['interamtdb']
-    mycol = mydb['jobads']
-
-    return mycol
-
 def remove_inline_elements(html_text):
     if html_text == None:
         return None
@@ -336,7 +318,9 @@ def update_column(conn):
             row['Eingestellt'], '%d.%m.%Y').date().strftime('%Y-%m-%d')}})
 
 if __name__ == '__main__':
-    conn = mongo_authenticate()
+    client = database_wrapper.mongo_authenticate('./')
+    db = client['interamtdb']
+    conn = db['jobads']
     list_of_new_job_ads = get_new_job_ads(conn)
 
     for i in range(len(list_of_new_job_ads)):
@@ -351,4 +335,5 @@ if __name__ == '__main__':
         print('Job ad ' + str(i + 1) + ' of ' + str(len(list_of_new_job_ads)) + ' scraped.')
         time.sleep(4)
 
+    client.close()
     print(str(len(list_of_new_job_ads)))

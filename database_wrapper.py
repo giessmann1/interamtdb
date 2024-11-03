@@ -24,7 +24,7 @@ def mongo_authenticate(path):
     client = pymongo.MongoClient(
         f'mongodb://{username}:{password}@{host}:{port}', authSource='admin'
     )
-    return client['interamtdb']
+    return client
 
 def read_csv(file_path, limit=None):
     with open(file_path, 'r', newline='') as csvfile:
