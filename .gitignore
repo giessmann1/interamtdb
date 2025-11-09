@@ -164,12 +164,4 @@ cython_debug/
 interamtdb-data/
 geckodriver.log
 scraper-log.txt
-
-# R
-*.Rapp.history
-*.Rhistory
-*.RData
-*.Rproj
-*.Rproj.user
-*.Rprofile
-.Rproj.user
+.DS_Store
