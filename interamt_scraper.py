@@ -12,11 +12,12 @@ from datetime import datetime
 from subprocess import getoutput
 from bs4 import BeautifulSoup
 import time
-import urllib.parse
 import pymongo
 import json
 import requests
 import database_wrapper
+import platform
+import os
 
 def dicts_equal(d1, d2):
     ''' return True if all keys and values are the same '''
@@ -29,8 +30,15 @@ def get_new_job_ads(conn):
     # Optimization to run on a headless server-side firefox, adjust if other setups are used.
     # Be aware of incompatibilites between selenium and geckodriver, see requirements.txt
     opts = Options()
-    opts.binary_location = getoutput(
-       'find /snap/firefox -name firefox').split('\n')[-1]
+    
+    # Detect OS and set Firefox binary location accordingly
+    system = platform.system()
+    if system == 'Darwin':  # macOS
+        opts.binary_location = '/Applications/Firefox.app/Contents/MacOS/firefox'
+        os.environ['MOZ_CRASHREPORTER_DISABLE'] = '1'
+    elif system == 'Linux':
+        opts.binary_location = getoutput('find /snap/firefox -name firefox').split('\n')[-1]
+    
     opts.add_argument('--headless')
     service = Service(executable_path='/usr/local/bin/geckodriver')
     driver = webdriver.Firefox(options=opts, service=service)
@@ -44,21 +52,21 @@ def get_new_job_ads(conn):
     # Click cookie button
     time.sleep(3)
     driver.find_element(
-        By.XPATH, "//button[contains(@class, 'ia-e-button') and contains(@class, 'ia-e-button--primary') and contains(@class, 'ia-js-cookie-accept__all')]").click()
+        By.XPATH, "//button[contains(@class, 'ia-e-button') and contains(@class, 'ia-e-button--primary') and contains(@class, 'ia-js-cookie-accept')]").click()
     time.sleep(2)
 
-    # print("Cookie button clicked")
+    print("Cookie button clicked")
 
     soup = BeautifulSoup(driver.page_source, 'html.parser')
     table = soup.find('table')  # find table
     # get number of current job ads
     job_ads_max = int(table.find('caption').find_all('span')[
                       1].text.replace(' Angebote gefunden', ''))
-    # print('Total job ads available: ' + str(job_ads_max))
+    print('Total job ads available: ' + str(job_ads_max))
     ADS_PER_LOOP = 10  # constant determined by website
     # plus one since remainder requires a loop, minus one since 10 ads are initially there
     loops = int(job_ads_max / ADS_PER_LOOP)
-    if (loops > 300): loops = 300 # Limiter, max. 3000 on initial run
+    if (loops > 300): loops = 300 # Limiter
     last_loop_entries = job_ads_max % ADS_PER_LOOP
     # id can change depending of browser
     button_id = table.find('button').get('id')
@@ -75,7 +83,7 @@ def get_new_job_ads(conn):
     else:
         last_entry_in_db = dict(last_entry_in_db[0])
 
-    # print("DB Check finished: " + str(last_entry_in_db))
+    print("DB Check finished: " + str(last_entry_in_db))
 
     '''
     Optimized code for the initial run.
@@ -83,7 +91,7 @@ def get_new_job_ads(conn):
     # Load entire table first
     if last_entry_in_db == None:
         for i in range(loops):
-            # print('Loop ' + str(i + 1) + ' of ' + str(loops) + ' done.')
+            print('Loop ' + str(i + 1) + ' of ' + str(loops) + ' done.')
             if i == loops:
                 break  # Don't click on last run
             if (i != 1):
@@ -92,9 +100,9 @@ def get_new_job_ads(conn):
                     driver.implicitly_wait(20)
                     driver.find_element(By.ID, button_id).click()
                     time.sleep(3)  # Min waiting time for animation
-                    # print("Clicking: " + str(i) + " out of " + str(loops) + ".")
+                    print("Clicking: " + str(i) + " out of " + str(loops) + ".")
                 except:
-                    # print('Driver reloaded.')
+                    print('Driver reloaded.')
                     driver.implicitly_wait(20)
                     driver.refresh()  # keeps the previous state on interamt.de specifically
                     time.sleep(3)
@@ -121,7 +129,7 @@ def get_new_job_ads(conn):
     Default sorting of website by adding date and id
     '''
     for i in range(loops):
-        # print('Loop ' + str(i + 1) + ' of ' + str(loops) + '_max done.')
+        print('Loop ' + str(i + 1) + ' of ' + str(loops) + '_max done.')
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         table_body = soup.find('table').find('tbody')
         trs_last_tens = None
@@ -131,18 +139,25 @@ def get_new_job_ads(conn):
             trs_last_tens = table_body.find_all(
                 'tr')[-10:]  # default if not last entry
 
+        # Check if we're getting valid rows
+        if not trs_last_tens or len(trs_last_tens) == 0:
+            print('Warning: No rows found in table. Site may have stopped loading.')
+            break
+
         finished = False
         for tr in trs_last_tens:
             tr_as_dict = get_tr_as_dict(tr)
             if (last_entry_in_db is not None):
                 unique_identifier = dict((k, tr_as_dict[k]) for k in [
                                          'ID', 'Eingestellt'] if k in tr_as_dict)
-                unique_identifier['Eingestellt'] = datetime.strptime(
-                    unique_identifier['Eingestellt'], '%d.%m.%Y').date().strftime('%Y-%m-%d')
-                check = dicts_equal(unique_identifier, last_entry_in_db)
-                if (check):
-                    finished = True
-                    break
+                # Check if 'Eingestellt' is present and not empty
+                if 'Eingestellt' in unique_identifier and unique_identifier['Eingestellt']:
+                    unique_identifier['Eingestellt'] = datetime.strptime(
+                        unique_identifier['Eingestellt'], '%d.%m.%Y').date().strftime('%Y-%m-%d')
+                    check = dicts_equal(unique_identifier, last_entry_in_db)
+                    if (check):
+                        finished = True
+                        break
             list_of_dicts.append(tr_as_dict)
 
         if finished:
@@ -259,7 +274,7 @@ def scrape_job_ad(id):
 
 def remove_duplicates(job_ad):
     '''
-    This function removes duplicates of the Interamt Side and other data cleansing stuff.
+    This function removes duplicates of the Interamt Site and other data cleansing stuff.
     '''
     # Behörde --> Behörde/Abteilung
     job_ad.pop('Behörde/Abteilung', None)
@@ -277,11 +292,15 @@ def remove_duplicates(job_ad):
     job_ad.pop('Frist', None)
 
     # TODO: Do other cleansing stuff here.
-    job_ad['Eingestellt'] = datetime.strptime(
-        job_ad['Eingestellt'], '%d.%m.%Y').date().strftime('%Y-%m-%d')
+    # Handle 'Eingestellt' date - set to empty string if missing or empty
+    if 'Eingestellt' in job_ad and job_ad['Eingestellt']:
+        job_ad['Eingestellt'] = datetime.strptime(
+            job_ad['Eingestellt'], '%d.%m.%Y').date().strftime('%Y-%m-%d')
+    else:
+        job_ad['Eingestellt'] = ''
 
-    # '' --> No field
-    job_ad = {k: v for k, v in job_ad.items() if v}
+    # '' --> No field (but keep 'Eingestellt' even if empty)
+    job_ad = {k: v for k, v in job_ad.items() if v or k == 'Eingestellt'}
     return job_ad
 
 def ireplace(old, new, text):
@@ -337,7 +356,7 @@ if __name__ == '__main__':
        extended_job_ad = replace_with_keys(extended_job_ad)
        # Save to file or db
        conn.insert_one(extended_job_ad)
-       # print('Job ad ' + str(i + 1) + ' of ' + str(len(list_of_new_job_ads)) + ' scraped.')
+       print('Job ad ' + str(i + 1) + ' of ' + str(len(list_of_new_job_ads)) + ' scraped.')
        time.sleep(4)
 
     client.close()

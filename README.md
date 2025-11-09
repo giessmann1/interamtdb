@@ -22,6 +22,7 @@ mkdir .secrets/
 echo -n "admin" > .secrets/mongodb_user.txt
 echo -n "password" > .secrets/mongodb_pwd.txt
 echo -n "localhost" > .secrets/host.txt
+echo -n "admin" > .secrets/authSource.txt
 ```
 
 Docker installation needed, see: https://docs.docker.com/engine/install/.

@@ -2,27 +2,67 @@ import urllib
 import pymongo
 import pandas as pd
 import csv
+import os
 
 class RUN_OFFLINE:
     def __init__(self, file):
         self.file = file
 
 # Returns connection object at database level
-def mongo_authenticate(path):
-    with open(f'{path}.secrets/host.txt', 'r') as f_open:
-        host = f_open.readlines()[0]
-    host = urllib.parse.quote_plus(host)
+def mongo_authenticate(path: str) -> pymongo.MongoClient:
+    if os.environ.get('DOCKER_ENV'):
+        host = os.environ.get('MONGO_HOST', 'interamtdb')
+        
+        # In Docker environment, read credentials from Docker secrets
+        try:
+            with open('/run/secrets/mongodb-user', 'r') as f_open:
+                username = f_open.read().strip()
+        except FileNotFoundError:
+            raise ValueError("Docker secret 'mongodb-user' not found. Ensure the container has access to the mongodb-user secret.")
+        
+        try:
+            with open('/run/secrets/mongodb-pass', 'r') as f_open:
+                password = f_open.read().strip()
+        except FileNotFoundError:
+            raise ValueError("Docker secret 'mongodb-pass' not found. Ensure the container has access to the mongodb-pass secret.")
+        
+        try:
+            with open('/run/secrets/authSource', 'r') as f_open:
+                auth_source = f_open.read().strip()
+        except FileNotFoundError:
+            auth_source = 'admin'  # Default fallback
+    else:
+        try:
+            with open(f'{path}/.secrets/host.txt', 'r') as f_open:
+                host = f_open.readlines()[0].strip()
+        except FileNotFoundError:
+            host = 'localhost'
+        
+        try:
+            with open(f'{path}/.secrets/mongodb_user.txt', 'r') as f_open:
+                username = f_open.readlines()[0].strip()
+        except FileNotFoundError:
+            raise ValueError("mongodb_user.txt not found in .secrets directory")
+        
+        try:
+            with open(f'{path}/.secrets/mongodb_pwd.txt', 'r') as f_open:
+                password = f_open.readlines()[0].strip()
+        except FileNotFoundError:
+            raise ValueError("mongodb_pwd.txt not found in .secrets directory")
+        
+        try:
+            with open(f'{path}/.secrets/authSource.txt', 'r') as f_open:
+                auth_source = f_open.readlines()[0].strip()
+        except FileNotFoundError:
+            auth_source = 'admin'  # Default fallback
 
-    port = 27017
-    with open(f'{path}.secrets/mongodb_user.txt', 'r') as f_open:
-        username = f_open.readlines()[0]
+    host = urllib.parse.quote_plus(host)
     username = urllib.parse.quote_plus(username)
-    with open(f'{path}.secrets/mongodb_pwd.txt', 'r') as f_open:
-        password = f_open.readlines()[0]
     password = urllib.parse.quote_plus(password)
+    port = 27017
 
     client = pymongo.MongoClient(
-        f'mongodb://{username}:{password}@{host}:{port}', authSource='admin'
+        f'mongodb://{username}:{password}@{host}:{port}', authSource=auth_source
     )
     return client
 
@@ -69,11 +109,3 @@ if __name__ == '__main__':
         print('Connection not working.')
         print(e)
         exit(1)
-    
-    public_db = db['jobads']
-    public_ads_5000 = pd.DataFrame(get_all_collection_docs(public_db, limit=5000))
-    public_ads_5000.to_csv('public_ads_5000.csv', index=None, quoting=csv.QUOTE_ALL)
-
-    private_db = db['privateads']
-    private_ads_5000 = pd.DataFrame(get_all_collection_docs(private_db, limit=5000))
-    private_ads_5000.to_csv('private_ads_5000.csv', index=None, quoting=csv.QUOTE_ALL)
