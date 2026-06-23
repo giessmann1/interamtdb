@@ -15,9 +15,12 @@ import time
 import pymongo
 import json
 import requests
+import certifi
 import database_wrapper
 import platform
 import os
+
+_ssl_warning_shown = False
 
 def dicts_equal(d1, d2):
     ''' return True if all keys and values are the same '''
@@ -40,7 +43,7 @@ def get_new_job_ads(conn):
         opts.binary_location = getoutput('find /snap/firefox -name firefox').split('\n')[-1]
     
     opts.add_argument('--headless')
-    service = Service(executable_path='/usr/local/bin/geckodriver')
+    service = Service('/usr/local/bin/geckodriver')
     driver = webdriver.Firefox(options=opts, service=service)
 
     # For Safari
@@ -208,12 +211,48 @@ def write_to_json_file(list_of_dicts):
     f.close()
 
 def get_li_as_list(li):
+    term = li.find('dt', class_='ia-m-desc-list__term')
+    descr = li.find('dd', class_='ia-m-desc-list__descr')
+    if term and descr:
+        term_text = term.text.strip().replace('\n', ' ')
+        value_text = descr.text.strip().replace('\n', ' ')
+        if term_text and value_text:
+            return [term_text, value_text]
     contents = li.find_all('span', class_='ia-m-desc-list__item-content')
-    if (contents is None or len(contents) < 2):
+    if contents is None or len(contents) < 2:
         return None
     term = contents[0].text.strip().replace('\n', ' ')
     value = contents[1].text.strip().replace('\n', ' ')
     return [term, value]
+
+def get_desc_item_as_pair(item):
+    term = item.find('dt', class_='ia-m-desc-list__term')
+    descr = item.find('dd', class_='ia-m-desc-list__descr')
+    if term and descr:
+        term_text = term.text.strip().replace('\n', ' ')
+        value_text = descr.text.strip().replace('\n', ' ')
+        if term_text and value_text:
+            return [term_text, value_text]
+    return None
+
+def fetch_job_ad_page(session, url):
+    global _ssl_warning_shown
+    import urllib3
+    verify_env = os.environ.get('SCRAPER_SSL_VERIFY')
+    if verify_env is not None and verify_env.lower() in ('0', 'false', 'no'):
+        verify = False
+    elif verify_env is not None and verify_env.lower() in ('1', 'true', 'yes'):
+        verify = True
+    else:
+        verify = certifi.where()
+    try:
+        return session.get(url, verify=verify, timeout=30)
+    except requests.exceptions.SSLError:
+        if not _ssl_warning_shown:
+            print('Warning: SSL verification failed, retrying without verification.')
+            _ssl_warning_shown = True
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        return session.get(url, verify=False, timeout=30)
 
 def remove_inline_elements(html_text):
     if html_text == None:
@@ -233,18 +272,25 @@ def remove_inline_elements(html_text):
 def scrape_job_ad(id):
     url = f'https://www.interamt.de/koop/app/stelle?id={id}'
 
-    MAX_RETRIES = 20
+    MAX_RETRIES = 3
     session = requests.Session()
     adapter = requests.adapters.HTTPAdapter(max_retries=MAX_RETRIES)
     session.mount('https://', adapter)
     session.mount('http://', adapter)
 
-    r = session.get(url)
+    r = fetch_job_ad_page(session, url)
 
     soup = BeautifulSoup(r.content, 'html.parser')
 
     stellenbeschreibung_text = soup.find(
-        'div', class_='ia-e-richtext ia-h-space--top-l ia-m-job-offer-display-panel ia-h-border--bottom')
+        'div', class_='ia-e-richtext ia-h-space--top-l')
+    if stellenbeschreibung_text is None:
+        stellenbeschreibung_text = soup.find(
+            'div', class_='ia-e-richtext ia-h-space--top-l ia-m-job-offer-display-panel ia-h-border--bottom')
+    if stellenbeschreibung_text is None:
+        panels = soup.find_all('div', class_=lambda c: c and 'ia-e-richtext' in c)
+        if panels:
+            stellenbeschreibung_text = max(panels, key=lambda p: len(p.get_text()))
     stellenbeschreibung_text = remove_inline_elements(stellenbeschreibung_text)
 
     # Add newline to li elements
@@ -256,19 +302,28 @@ def scrape_job_ad(id):
     if stellenbeschreibung_text != None:
         data['Stellenbeschreibung'] = stellenbeschreibung_text.getText().strip()
 
-    sidebar = soup.find('div', class_='ia-sidebar')
-    if sidebar != None:
-        elements = sidebar.findAll('ul', recursive=False)
-        lis = []
-        for ul in elements:
-            lis.extend(ul.findAll('li'))
-        for li in lis:
-            li_as_list = get_li_as_list(li)
-            if (li_as_list is not None):
-                # Check if attribute already exists, this happens e.g. when more than one email is provided.
-                if li_as_list[0] in data:
-                    li_as_list[0] = '_' + li_as_list[0]
-                data[li_as_list[0]] = li_as_list[1]
+    for item in soup.find_all('div', class_='ia-m-desc-list__item'):
+        pair = get_desc_item_as_pair(item)
+        if pair is not None:
+            key = pair[0]
+            if key in data:
+                key = '_' + key
+            data[key] = pair[1]
+
+    if len(data) <= 1:
+        sidebar = soup.find(class_='ia-sidebar')
+        if sidebar != None:
+            elements = sidebar.findAll('ul', recursive=False)
+            lis = []
+            for ul in elements:
+                lis.extend(ul.findAll('li'))
+            for li in lis:
+                li_as_list = get_li_as_list(li)
+                if li_as_list is not None:
+                    key = li_as_list[0]
+                    if key in data:
+                        key = '_' + key
+                    data[key] = li_as_list[1]
 
     return data
 
